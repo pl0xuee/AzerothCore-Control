@@ -127,6 +127,13 @@ public sealed class ServerCoordinator : IAsyncDisposable
             throw new FileNotFoundException(
                 $"{kind.ExecutableName()} was not found in the run directory. Check the Run directory in Settings.", exe);
 
+        // Clean up any orphaned instance of this exact server (e.g. left over from a prior restart storm)
+        // so it doesn't hold the login/world port and make the fresh start fail to bind.
+        var killed = ProcessCleanup.KillStaleInstances(exe);
+        if (killed > 0)
+            _ = Notifications.NotifyAsync(kind.DisplayName(),
+                $"Cleaned up {killed} orphaned {kind.ExecutableName()} process(es) before starting.", NotificationSeverity.Info);
+
         var sup = kind == ServerKind.World ? World : Auth;
         sup.Start(exe, workingDirectory: runDir);
     }
