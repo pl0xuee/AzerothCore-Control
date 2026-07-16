@@ -1,0 +1,118 @@
+using System.IO;
+using AzerothCoreControl.Core.Models;
+using AzerothCoreControl.Core.Process;
+using AzerothCoreControl.Core.Services;
+using Microsoft.Extensions.Logging;
+
+namespace AzerothCoreControl.App.Services;
+
+/// <summary>
+/// Application-level composition root that owns the two server supervisors and every Core service,
+/// wires their events to notifications, and exposes high-level operations to the view-models.
+/// </summary>
+public sealed class ServerCoordinator : IAsyncDisposable
+{
+    private readonly SettingsStore _store;
+    private AppSettings _settings;
+
+    public ServerCoordinator(SettingsStore store, ILoggerFactory loggerFactory)
+    {
+        _store = store;
+        _settings = store.Load();
+
+        var launcher = new SystemProcessLauncher();
+        Func<AppSettings> accessor = () => _settings;
+
+        World = new ServerProcessSupervisor(ServerKind.World, launcher, accessor,
+            logger: loggerFactory.CreateLogger<ServerProcessSupervisor>());
+        Auth = new ServerProcessSupervisor(ServerKind.Auth, launcher, accessor,
+            logger: loggerFactory.CreateLogger<ServerProcessSupervisor>());
+
+        Notifications = new NotificationService(accessor, logger: loggerFactory.CreateLogger<NotificationService>());
+        MySql = new MySqlMonitor(accessor, loggerFactory.CreateLogger<MySqlMonitor>());
+        ModuleChecker = new ModuleUpdateChecker(accessor, loggerFactory.CreateLogger<ModuleUpdateChecker>());
+        ModuleUpdater = new ModuleUpdater(accessor, loggerFactory.CreateLogger<ModuleUpdater>());
+        Releases = new GitHubReleaseService(accessor, logger: loggerFactory.CreateLogger<GitHubReleaseService>());
+        Backup = new BackupService(accessor, logger: loggerFactory.CreateLogger<BackupService>());
+
+        var build = new BuildService(accessor, loggerFactory.CreateLogger<BuildService>());
+        var deploy = new DeployService(loggerFactory.CreateLogger<DeployService>());
+        BuildSvc = build;
+        DeploySvc = deploy;
+        Orchestrator = new UpdateOrchestrator(accessor, ModuleUpdater, build, deploy, Backup, World, Auth,
+            loggerFactory.CreateLogger<UpdateOrchestrator>());
+        Schedule = new ScheduleService(accessor, World, Auth, Backup, logger: loggerFactory.CreateLogger<ScheduleService>());
+
+        // Route notable lifecycle events (crashes, breaker trips) to the notification sinks.
+        World.Notable += OnNotable;
+        Auth.Notable += OnNotable;
+
+        Schedule.Start();
+    }
+
+    public ServerProcessSupervisor World { get; }
+    public ServerProcessSupervisor Auth { get; }
+    public NotificationService Notifications { get; }
+    public MySqlMonitor MySql { get; }
+    public ModuleUpdateChecker ModuleChecker { get; }
+    public ModuleUpdater ModuleUpdater { get; }
+    public GitHubReleaseService Releases { get; }
+    public BackupService Backup { get; }
+    public BuildService BuildSvc { get; }
+    public DeployService DeploySvc { get; }
+    public UpdateOrchestrator Orchestrator { get; }
+    public ScheduleService Schedule { get; }
+
+    public AppSettings Settings => _settings;
+
+    public void SaveSettings() => _store.Save(_settings);
+
+    public void ReplaceSettings(AppSettings settings)
+    {
+        _settings = settings;
+        _store.Save(settings);
+    }
+
+    /// <summary>Start MySQL (if required), then auth and world servers, from the configured run directory.</summary>
+    public async Task StartAllAsync(CancellationToken cancellationToken = default)
+    {
+        var runDir = _settings.RunDirectory;
+        if (string.IsNullOrWhiteSpace(runDir))
+            throw new InvalidOperationException("Run directory is not configured. Open Settings to set it.");
+
+        if (_settings.MySql.RequireForStart)
+        {
+            var ok = await MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            if (!ok && MySql.GetState() != MySqlState.NotConfigured)
+                throw new InvalidOperationException("MySQL is not running and could not be started.");
+        }
+
+        Auth.Start(Path.Combine(runDir, ServerKind.Auth.ExecutableName()), workingDirectory: runDir);
+        World.Start(Path.Combine(runDir, ServerKind.World.ExecutableName()), workingDirectory: runDir);
+    }
+
+    public async Task StopAllAsync(bool graceful = true, CancellationToken cancellationToken = default)
+    {
+        await World.StopAsync(graceful, cancellationToken).ConfigureAwait(false);
+        await Auth.StopAsync(graceful, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void OnNotable(SupervisorEvent e)
+    {
+        var severity = e.Kind switch
+        {
+            SupervisorEventKind.CrashLoopTripped => NotificationSeverity.Critical,
+            SupervisorEventKind.Crashed => NotificationSeverity.Warning,
+            _ => NotificationSeverity.Info,
+        };
+        // Fire-and-forget: notifications must never block the supervisor's state machine.
+        _ = Notifications.NotifyAsync(e.Server.DisplayName(), e.Message, severity);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await Schedule.DisposeAsync().ConfigureAwait(false);
+        World.Dispose();
+        Auth.Dispose();
+    }
+}

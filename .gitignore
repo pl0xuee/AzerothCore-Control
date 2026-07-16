@@ -1,0 +1,28 @@
+# Build output
+bin/
+obj/
+publish/
+[Rr]elease/
+[Dd]ebug/
+*.user
+
+# Rider / VS
+.vs/
+.idea/
+*.suo
+
+# Test results
+TestResults/
+*.trx
+
+# NuGet
+*.nupkg
+packages/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App runtime artifacts (should never be committed)
+*.log
+settings.json

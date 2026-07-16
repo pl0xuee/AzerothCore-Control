@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Derive version (strip leading v)
+        id: ver
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}" -replace '^v', ''
+          echo "number=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Run tests
+        run: dotnet test --configuration Release
+
+      - name: Publish single-file win-x64 app
+        run: >
+          dotnet publish src/AzerothCoreControl.App/AzerothCoreControl.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.ver.outputs.number }}
+          -p:InformationalVersion=${{ steps.ver.outputs.number }}
+          --output publish
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/* -DestinationPath "AzerothCoreControl-${{ github.ref_name }}-win-x64.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            AzerothCoreControl-*-win-x64.zip
+            publish/AzerothCoreControl.exe

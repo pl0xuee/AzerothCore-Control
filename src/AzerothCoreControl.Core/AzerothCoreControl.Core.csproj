@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>AzerothCoreControl.Core</RootNamespace>
+    <!-- ServiceController & registry helpers are Windows-only and guarded at runtime
+         with OperatingSystem.IsWindows(); silence the platform-compat analyzer so the
+         library still builds/tests on the Linux dev box. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
+    <PackageReference Include="Octokit" Version="13.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>
