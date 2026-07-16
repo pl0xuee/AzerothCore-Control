@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Right-clicking the system-tray icon no longer crashes** the app — the tray menu is fully isolated from
   the app theme (themed menu styles were crashing the tray popup), uses commands instead of code-behind
   handlers, and a global exception handler now logs any UI error instead of terminating.
-- **Bringing the app to the foreground no longer crashes** — the show/restore path is hardened and runs
-  through a single safe code path.
+- **Bringing the app to the foreground no longer crashes** — fixed the actual cause: `<Run>` text bindings
+  default to two-way in WPF, which threw on the read-only version/repository fields; those bindings are now
+  one-way. The show/restore path was also hardened as a safety net.
 - **"Restart world" no longer occasionally leaves the server stopped** — stopping now waits for the state
   to fully settle before a restart begins (fixed a race between the drain and the exit handler).
 - A failed launch or failed auto-restart no longer leaves a server stuck in the "Starting…" state.

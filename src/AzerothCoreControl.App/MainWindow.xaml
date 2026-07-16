@@ -51,8 +51,8 @@
                                 </StackPanel>
                                 <TextBlock Text="{Binding StatusText}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
                                 <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
-                                    <Run Text="Uptime " /><Run Text="{Binding Uptime}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount}" Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <Run Text="Uptime " /><Run Text="{Binding Uptime, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
                                 </TextBlock>
                                 <Grid Margin="0,14,0,0">
                                     <Grid.ColumnDefinitions>
@@ -87,8 +87,8 @@
                                 </StackPanel>
                                 <TextBlock Text="{Binding StatusText}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
                                 <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
-                                    <Run Text="Uptime " /><Run Text="{Binding Uptime}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount}" Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <Run Text="Uptime " /><Run Text="{Binding Uptime, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
                                 </TextBlock>
                                 <Grid Margin="0,14,0,0">
                                     <Grid.ColumnDefinitions>
@@ -213,7 +213,7 @@
                             </Grid>
 
                             <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
-                                <Run Text="Source: " /><Run Text="{Binding RepositoryName}" Foreground="{StaticResource TextPrimaryBrush}" />
+                                <Run Text="Source: " /><Run Text="{Binding RepositoryName, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
                             </TextBlock>
 
                             <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
