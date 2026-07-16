@@ -13,12 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The main window now opens **maximized** on launch.
+- Launching a second copy of the app now **brings the running window to the foreground** instead of doing
+  nothing.
+- The app no longer exits when its window is closed — it stays in the tray until you choose Quit.
 - Starting a server now verifies the run directory and executable exist first, with a clear error if not.
+- Any unhandled error is written in full to `%AppData%\AzerothCoreControl\last-crash.txt` and shown in a
+  dialog, so problems can be diagnosed instead of vanishing.
 
 ### Fixed
 - **Right-clicking the system-tray icon no longer crashes** the app — the tray menu is fully isolated from
   the app theme (themed menu styles were crashing the tray popup), uses commands instead of code-behind
   handlers, and a global exception handler now logs any UI error instead of terminating.
+- **Bringing the app to the foreground no longer crashes** — the show/restore path is hardened and runs
+  through a single safe code path.
 - **"Restart world" no longer occasionally leaves the server stopped** — stopping now waits for the state
   to fully settle before a restart begins (fixed a race between the drain and the exit handler).
 - A failed launch or failed auto-restart no longer leaves a server stuck in the "Starting…" state.

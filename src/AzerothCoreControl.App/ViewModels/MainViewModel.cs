@@ -71,13 +71,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Tray menu: restore and focus the main window (maximized).</summary>
     [RelayCommand]
     private void ShowWindow()
-    {
-        var window = System.Windows.Application.Current?.MainWindow;
-        if (window == null) return;
-        window.Show();
-        window.WindowState = WindowState.Maximized;
-        window.Activate();
-    }
+        => (System.Windows.Application.Current as App)?.BringToForeground();
 
     /// <summary>Tray menu: really exit the app (bypasses hide-to-tray).</summary>
     [RelayCommand]
