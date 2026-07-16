@@ -78,11 +78,12 @@ public partial class App : System.Windows.Application
         var store = new SettingsStore(Path.Combine(appDataDir, "settings.json"));
         _coordinator = new ServerCoordinator(store, loggerFactory);
 
-        // Route Core's toast requests to native Windows toasts.
+        // Route Core's toast requests to native Windows toasts — always off the current thread, because the
+        // first toast can stall on COM/WinRT activation and must never block the UI or the supervisor.
         _coordinator.Notifications.ToastRequested += (title, message, severity) =>
         {
             if (OperatingSystem.IsWindows())
-                ToastNotifier.Show(title, message, severity);
+                Task.Run(() => ToastNotifier.Show(title, message, severity));
         };
 
         MainViewModel = new MainViewModel(_coordinator);

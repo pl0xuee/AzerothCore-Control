@@ -140,19 +140,14 @@ public sealed class ServerCoordinator : IAsyncDisposable
 
     private void OnNotable(SupervisorEvent e)
     {
-        // Only surface PROBLEMS as notifications (toast/Discord/email). Routine start/stop/clean-shutdown
-        // are reflected on the dashboard and don't need a toast — those were just noise.
         var severity = e.Kind switch
         {
             SupervisorEventKind.CrashLoopTripped => NotificationSeverity.Critical,
             SupervisorEventKind.Crashed => NotificationSeverity.Warning,
-            _ => (NotificationSeverity?)null,
+            _ => NotificationSeverity.Info,
         };
-        if (severity is not { } level)
-            return;
-
         // Fire-and-forget: notifications must never block the supervisor's state machine.
-        _ = Notifications.NotifyAsync(e.Server.DisplayName(), e.Message, level);
+        _ = Notifications.NotifyAsync(e.Server.DisplayName(), e.Message, severity);
     }
 
     public async ValueTask DisposeAsync()
