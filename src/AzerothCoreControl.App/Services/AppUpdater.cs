@@ -118,7 +118,8 @@ public sealed class AppUpdater
             :waitloop
             tasklist /fi "PID eq {pid}" | findstr /i "{pid}" >nul
             if not errorlevel 1 (
-                timeout /t 1 /nobreak >nul
+                rem ping is used instead of timeout: timeout needs a console (we launch headless).
+                ping -n 2 127.0.0.1 >nul
                 goto waitloop
             )
             if exist "{backup}" del /q "{backup}"

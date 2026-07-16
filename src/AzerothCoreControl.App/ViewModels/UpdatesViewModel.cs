@@ -28,9 +28,20 @@ public sealed partial class UpdatesViewModel : ObservableObject
         _coordinator = coordinator;
         _updater = coordinator.AppUpdater;
 
-        _updater.DownloadProgress += p => DownloadProgress = p * 100;
-        _updater.UpdateAvailable += r => AvailableAppUpdate = r;
-        _updater.StageChanged += (_, msg) => StatusMessage = msg;
+        // These events can fire on a background thread (the auto-update loop), so marshal onto the UI
+        // thread before touching bound state. UpdateAvailable is handled in App.xaml.cs (also marshaled),
+        // which sets AvailableAppUpdate on this same VM — so we deliberately don't subscribe to it here.
+        _updater.DownloadProgress += p => OnUi(() => DownloadProgress = p * 100);
+        _updater.StageChanged += (_, msg) => OnUi(() => StatusMessage = msg);
+    }
+
+    private static void OnUi(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+            action();
+        else
+            dispatcher.BeginInvoke(action);
     }
 
     public string CurrentVersion => GitHubReleaseService.CurrentAppVersion;

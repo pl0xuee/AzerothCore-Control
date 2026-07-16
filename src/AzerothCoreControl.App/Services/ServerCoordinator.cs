@@ -80,19 +80,10 @@ public sealed class ServerCoordinator : IAsyncDisposable
     /// <summary>Start MySQL (if required), then auth and world servers, from the configured run directory.</summary>
     public async Task StartAllAsync(CancellationToken cancellationToken = default)
     {
-        var runDir = _settings.RunDirectory;
-        if (string.IsNullOrWhiteSpace(runDir))
-            throw new InvalidOperationException("Run directory is not configured. Open Settings to set it.");
-
-        if (_settings.MySql.RequireForStart)
-        {
-            var ok = await MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
-            if (!ok && MySql.GetState() != MySqlState.NotConfigured)
-                throw new InvalidOperationException("MySQL is not running and could not be started.");
-        }
-
-        Auth.Start(Path.Combine(runDir, ServerKind.Auth.ExecutableName()), workingDirectory: runDir);
-        World.Start(Path.Combine(runDir, ServerKind.World.ExecutableName()), workingDirectory: runDir);
+        var runDir = RequireRunDirectory();
+        await EnsureMySqlAsync(cancellationToken).ConfigureAwait(false);
+        StartOne(ServerKind.Auth, runDir);
+        StartOne(ServerKind.World, runDir);
     }
 
     public async Task StopAllAsync(bool graceful = true, CancellationToken cancellationToken = default)
@@ -105,19 +96,39 @@ public sealed class ServerCoordinator : IAsyncDisposable
     /// <summary>Start a single server (ensuring MySQL first if required).</summary>
     public async Task StartServerAsync(ServerKind kind, CancellationToken cancellationToken = default)
     {
+        var runDir = RequireRunDirectory();
+        await EnsureMySqlAsync(cancellationToken).ConfigureAwait(false);
+        StartOne(kind, runDir);
+    }
+
+    private string RequireRunDirectory()
+    {
         var runDir = _settings.RunDirectory;
         if (string.IsNullOrWhiteSpace(runDir))
             throw new InvalidOperationException("Run directory is not configured. Open Settings to set it.");
+        if (!Directory.Exists(runDir))
+            throw new DirectoryNotFoundException($"Run directory does not exist: {runDir}");
+        return runDir;
+    }
 
-        if (_settings.MySql.RequireForStart)
-        {
-            var ok = await MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
-            if (!ok && MySql.GetState() != MySqlState.NotConfigured)
-                throw new InvalidOperationException("MySQL is not running and could not be started.");
-        }
+    private async Task EnsureMySqlAsync(CancellationToken cancellationToken)
+    {
+        if (!_settings.MySql.RequireForStart)
+            return;
+        var ok = await MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+        if (!ok && MySql.GetState() != MySqlState.NotConfigured)
+            throw new InvalidOperationException("MySQL is not running and could not be started.");
+    }
+
+    private void StartOne(ServerKind kind, string runDir)
+    {
+        var exe = Path.Combine(runDir, kind.ExecutableName());
+        if (!File.Exists(exe))
+            throw new FileNotFoundException(
+                $"{kind.ExecutableName()} was not found in the run directory. Check the Run directory in Settings.", exe);
 
         var sup = kind == ServerKind.World ? World : Auth;
-        sup.Start(Path.Combine(runDir, kind.ExecutableName()), workingDirectory: runDir);
+        sup.Start(exe, workingDirectory: runDir);
     }
 
     /// <summary>

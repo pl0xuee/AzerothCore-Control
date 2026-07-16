@@ -34,8 +34,11 @@ public sealed class ServerProcessSupervisor : IDisposable
     private readonly TimeProvider _time;
     private readonly ILogger _log;
 
+    private const int RecentOutputLimit = 20;
+
     private readonly object _gate = new();
     private readonly List<DateTimeOffset> _recentCrashes = new();
+    private readonly Queue<string> _recentOutput = new();
 
     private IProcessHandle? _process;
     private ProcessStartSpec? _currentSpec;
@@ -45,6 +48,8 @@ public sealed class ServerProcessSupervisor : IDisposable
     private int _restartCount;
     private DateTimeOffset? _runningSince;
     private CancellationTokenSource? _restartCts;
+    private TaskCompletionSource? _stopCompletion;
+    private int _restartGeneration;
     private int _disposed;
 
     public ServerProcessSupervisor(
@@ -101,7 +106,19 @@ public sealed class ServerProcessSupervisor : IDisposable
                 return;
             CancelPendingRestart();
             _intentionalStop = false;
-            LaunchLocked(executablePath, arguments, workingDirectory);
+            try
+            {
+                LaunchLocked(executablePath, arguments, workingDirectory);
+            }
+            catch
+            {
+                // Launch failed (e.g. missing exe) — don't leave the state stuck at "Starting".
+                _process = null;
+                _currentSpec = null;
+                _runningSince = null;
+                SetStateLocked(ServerState.Stopped);
+                throw;
+            }
         }
     }
 
@@ -113,6 +130,7 @@ public sealed class ServerProcessSupervisor : IDisposable
     {
         IProcessHandle? handle;
         int delaySeconds;
+        Task stopped;
         lock (_gate)
         {
             CancelPendingRestart();
@@ -124,6 +142,10 @@ public sealed class ServerProcessSupervisor : IDisposable
                 SetStateLocked(ServerState.Stopped);
                 return;
             }
+            // Completed by HandleExit once the state has actually settled to Stopped — so callers that
+            // restart immediately after StopAsync (e.g. "Restart world") don't race the exit handler.
+            _stopCompletion ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            stopped = _stopCompletion.Task;
         }
 
         if (graceful && _kind == ServerKind.World)
@@ -131,20 +153,27 @@ public sealed class ServerProcessSupervisor : IDisposable
             // worldserver understands console commands on stdin.
             handle.WriteStdin($".server shutdown {Math.Max(delaySeconds, 1)}");
             var grace = TimeSpan.FromSeconds(delaySeconds + 30);
-            if (await handle.WaitForExitAsync(grace, cancellationToken).ConfigureAwait(false))
-                return; // exit handler will finalize state
+            if (await WaitOrTimeoutAsync(stopped, grace, cancellationToken).ConfigureAwait(false))
+                return; // exit handler finalized the state
         }
         else if (graceful && _kind == ServerKind.Auth)
         {
             // authserver has no drain command; just give it a moment to close cleanly.
             handle.Kill();
-            await handle.WaitForExitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            await WaitOrTimeoutAsync(stopped, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        // Timed out or non-graceful: force it.
+        // Timed out or non-graceful: force it, then wait for the state to settle.
         handle.Kill();
-        await handle.WaitForExitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+        await WaitOrTimeoutAsync(stopped, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Await <paramref name="task"/> up to <paramref name="timeout"/>; true if it completed in time.</summary>
+    private async Task<bool> WaitOrTimeoutAsync(Task task, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var completed = await Task.WhenAny(task, Task.Delay(timeout, _time, cancellationToken)).ConfigureAwait(false);
+        return completed == task;
     }
 
     /// <summary>
@@ -200,7 +229,28 @@ public sealed class ServerProcessSupervisor : IDisposable
             HandleExit(handle);
     }
 
-    private void OnOutput(object? sender, string line) => OutputLine?.Invoke(_kind, line);
+    private void OnOutput(object? sender, string line)
+    {
+        lock (_gate)
+        {
+            _recentOutput.Enqueue(line);
+            while (_recentOutput.Count > RecentOutputLimit)
+                _recentOutput.Dequeue();
+        }
+        OutputLine?.Invoke(_kind, line);
+    }
+
+    /// <summary>Last non-empty output line, for diagnosing why a server exited (called under the lock).</summary>
+    private string? LastMeaningfulOutputLocked()
+    {
+        for (var i = _recentOutput.Count - 1; i >= 0; i--)
+        {
+            var line = _recentOutput.ElementAt(i).Trim();
+            if (line.Length > 0)
+                return line;
+        }
+        return null;
+    }
 
     private void OnExited(object? sender, EventArgs e)
     {
@@ -212,6 +262,7 @@ public sealed class ServerProcessSupervisor : IDisposable
     {
         SupervisorEvent? notify = null;
         Action? afterUnlock = null;
+        TaskCompletionSource? stopToSignal = null;
 
         lock (_gate)
         {
@@ -222,6 +273,12 @@ public sealed class ServerProcessSupervisor : IDisposable
             int exitCode;
             try { exitCode = handle.ExitCode; }
             catch { exitCode = -1; }
+
+            // How long did it run? A server that exits within a few seconds almost certainly failed to
+            // start (bad config, DB unreachable, missing files) rather than being stopped normally.
+            var ranFor = _runningSince is { } started ? _time.GetUtcNow() - started : (TimeSpan?)null;
+            var quickExit = ranFor is { } r && r < TimeSpan.FromSeconds(15);
+            var lastOutput = LastMeaningfulOutputLocked();
 
             DetachLocked(handle);
             _runningSince = null;
@@ -236,10 +293,20 @@ public sealed class ServerProcessSupervisor : IDisposable
             else
             {
                 var classification = ExitCodePolicy.Classify(exitCode);
-                _log.LogInformation("{Server} exited with code {Code} ({Class})", _kind, exitCode, classification);
+                _log.LogInformation("{Server} exited with code {Code} ({Class}) after {Seconds:0}s. Last output: {Output}",
+                    _kind, exitCode, classification, ranFor?.TotalSeconds ?? 0, lastOutput ?? "(none)");
 
                 switch (classification)
                 {
+                    case ExitClassification.CleanShutdown when quickExit:
+                        // Exited "cleanly" but almost immediately — surface it as a probable startup failure.
+                        _consecutiveCrashes = 0;
+                        SetStateLocked(ServerState.Stopped);
+                        notify = new SupervisorEvent(_kind, SupervisorEventKind.Crashed,
+                            $"{_kind.DisplayName()} exited immediately after starting — likely a startup problem. " +
+                            Reason(lastOutput));
+                        break;
+
                     case ExitClassification.CleanShutdown:
                         _consecutiveCrashes = 0;
                         SetStateLocked(ServerState.Stopped);
@@ -258,19 +325,24 @@ public sealed class ServerProcessSupervisor : IDisposable
 
                     case ExitClassification.Crash:
                     default:
-                        notify = HandleCrashLocked(exitCode, out afterUnlock);
+                        notify = HandleCrashLocked(exitCode, lastOutput, out afterUnlock);
                         break;
                 }
             }
+
+            // Hand off any pending stop-completion; completed after the lock (state is now settled).
+            stopToSignal = _stopCompletion;
+            _stopCompletion = null;
         }
 
         if (notify != null)
             Notable?.Invoke(notify);
         afterUnlock?.Invoke();
+        stopToSignal?.TrySetResult();
     }
 
     /// <summary>Crash handling under the lock. Decides between backoff-restart and tripping the breaker.</summary>
-    private SupervisorEvent HandleCrashLocked(int exitCode, out Action? afterUnlock)
+    private SupervisorEvent HandleCrashLocked(int exitCode, string? lastOutput, out Action? afterUnlock)
     {
         afterUnlock = null;
         var now = _time.GetUtcNow();
@@ -283,7 +355,7 @@ public sealed class ServerProcessSupervisor : IDisposable
         {
             SetStateLocked(ServerState.Crashed);
             return new SupervisorEvent(_kind, SupervisorEventKind.Crashed,
-                $"{_kind.DisplayName()} crashed (exit {exitCode}). Auto-restart is disabled.");
+                $"{_kind.DisplayName()} crashed (exit {exitCode}). Auto-restart is disabled. {Reason(lastOutput)}");
         }
 
         if (_recentCrashes.Count >= wd.CrashLoopThreshold)
@@ -291,7 +363,7 @@ public sealed class ServerProcessSupervisor : IDisposable
             SetStateLocked(ServerState.Crashed);
             return new SupervisorEvent(_kind, SupervisorEventKind.CrashLoopTripped,
                 $"{_kind.DisplayName()} crashed {_recentCrashes.Count} times in {wd.CrashWindow.TotalMinutes:0} min. " +
-                "Auto-restart halted — manual intervention required.");
+                $"Auto-restart halted — manual intervention required. {Reason(lastOutput)}");
         }
 
         _consecutiveCrashes++;
@@ -300,8 +372,14 @@ public sealed class ServerProcessSupervisor : IDisposable
         afterUnlock = () => ScheduleRestart(delay);
         return new SupervisorEvent(_kind, SupervisorEventKind.Crashed,
             $"{_kind.DisplayName()} crashed (exit {exitCode}). Restarting in {delay.TotalSeconds:0}s " +
-            $"(attempt {_consecutiveCrashes}).");
+            $"(attempt {_consecutiveCrashes}). {Reason(lastOutput)}");
     }
+
+    /// <summary>Format the last server output line as a human hint, if any.</summary>
+    private static string Reason(string? lastOutput)
+        => string.IsNullOrWhiteSpace(lastOutput) ? "" : $"Last message: \"{Truncate(lastOutput, 160)}\"";
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
     /// <summary>Exponential backoff: initial * 2^(n-1), capped at max.</summary>
     internal static TimeSpan ComputeBackoff(WatchdogSettings wd, int consecutiveCrashes)
@@ -315,11 +393,13 @@ public sealed class ServerProcessSupervisor : IDisposable
     private void ScheduleRestart(TimeSpan delay)
     {
         CancellationToken token;
+        int generation;
         lock (_gate)
         {
             CancelPendingRestart();
             _restartCts = new CancellationTokenSource();
             token = _restartCts.Token;
+            generation = ++_restartGeneration;
         }
 
         _ = Task.Run(async () =>
@@ -331,11 +411,26 @@ public sealed class ServerProcessSupervisor : IDisposable
 
                 lock (_gate)
                 {
-                    if (token.IsCancellationRequested || _intentionalStop || _currentSpec == null)
+                    // Only relaunch if this is still the current pending restart AND nothing else has
+                    // started/stopped the server in the meantime (guards against a duplicate process).
+                    if (token.IsCancellationRequested || _intentionalStop || _currentSpec == null
+                        || generation != _restartGeneration || _state != ServerState.Restarting)
                         return;
-                    // Re-launch with the same spec used before the exit.
-                    _restartCount++;
-                    LaunchLocked(_currentSpec.FileName, _currentSpec.Arguments, _currentSpec.WorkingDirectory);
+
+                    try
+                    {
+                        _restartCount++;
+                        LaunchLocked(_currentSpec.FileName, _currentSpec.Arguments, _currentSpec.WorkingDirectory);
+                    }
+                    catch (Exception ex)
+                    {
+                        // A failed relaunch (exe locked mid-swap, missing, etc.) must not leave us stuck
+                        // in "Starting" — fall back to Crashed so the user can retry.
+                        _log.LogError(ex, "Failed to relaunch {Server}", _kind);
+                        _process = null;
+                        _runningSince = null;
+                        SetStateLocked(ServerState.Crashed);
+                    }
                 }
             }
             catch (OperationCanceledException) { /* restart cancelled by user stop */ }

@@ -6,12 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2026-07-15
 
+### Added
+- **Startup-failure diagnostics** — if a server exits right after starting (e.g. the database is
+  unreachable), the notification now includes the server's last output line explaining why, instead of
+  silently doing nothing.
+
 ### Changed
 - The main window now opens **maximized** on launch.
+- Starting a server now verifies the run directory and executable exist first, with a clear error if not.
 
 ### Fixed
-- **Right-clicking the system-tray icon no longer crashes** the app (the tray menu now uses commands, and
-  a global exception handler logs any UI error instead of terminating).
+- **Right-clicking the system-tray icon no longer crashes** the app — the tray menu is fully isolated from
+  the app theme (themed menu styles were crashing the tray popup), uses commands instead of code-behind
+  handlers, and a global exception handler now logs any UI error instead of terminating.
+- **"Restart world" no longer occasionally leaves the server stopped** — stopping now waits for the state
+  to fully settle before a restart begins (fixed a race between the drain and the exit handler).
+- A failed launch or failed auto-restart no longer leaves a server stuck in the "Starting…" state.
+- Closed a race that could spawn a **duplicate server process** when a manual start collided with an
+  automatic restart.
+- Update checks that run on a background thread no longer touch UI state off-thread; the in-place update
+  batch no longer CPU-spins while waiting for the app to exit.
 
 ## [0.1.1] - 2026-07-15
 

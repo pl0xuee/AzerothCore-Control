@@ -15,7 +15,15 @@
                             DoubleClickCommand="{Binding ShowWindowCommand}"
                             Visibility="Visible">
                 <tb:TaskbarIcon.ContextMenu>
-                    <ContextMenu>
+                    <!-- Style="{x:Null}" + empty child styles isolate the tray menu from the app theme.
+                         Themed implicit menu/scrollbar styles crash the tray ContextMenu because it renders
+                         in a separate popup presentation source; default Windows menu chrome is used here. -->
+                    <ContextMenu Style="{x:Null}">
+                        <ContextMenu.Resources>
+                            <Style TargetType="MenuItem" />
+                            <Style TargetType="Separator" />
+                            <Style TargetType="ScrollBar" />
+                        </ContextMenu.Resources>
                         <MenuItem Header="Open window" Command="{Binding ShowWindowCommand}" />
                         <Separator />
                         <MenuItem Header="Start all" Command="{Binding StartAllCommand}" />

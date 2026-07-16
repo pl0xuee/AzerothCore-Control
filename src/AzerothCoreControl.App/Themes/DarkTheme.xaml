@@ -484,19 +484,8 @@
         </Setter>
     </Style>
 
-    <!-- ============================= Context menu (tray) ============================= -->
-    <Style TargetType="ContextMenu">
-        <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-    </Style>
-    <Style TargetType="MenuItem">
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-        <Setter Property="Padding" Value="6,4" />
-    </Style>
-    <Style TargetType="Separator">
-        <Setter Property="Background" Value="{StaticResource BorderSubtleBrush}" />
-        <Setter Property="Margin" Value="4,3" />
-    </Style>
+    <!-- NOTE: ContextMenu / MenuItem / Separator are deliberately NOT themed here. Implicit menu styles
+         crash the system-tray ContextMenu (it renders in a separate popup presentation source); the tray
+         menu isolates itself from the app theme and uses default Windows chrome instead. -->
 
 </ResourceDictionary>
