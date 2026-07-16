@@ -22,6 +22,7 @@ public sealed partial class MainViewModel : ObservableObject
     public ServerStatusViewModel Auth { get; }
     public ConsoleViewModel Console { get; }
     public ModulesViewModel Modules { get; }
+    public UpdatesViewModel Updates { get; }
     public SettingsViewModel Settings { get; }
     public SchedulesViewModel Schedules { get; }
 
@@ -32,6 +33,7 @@ public sealed partial class MainViewModel : ObservableObject
         Auth = new ServerStatusViewModel(coordinator.Auth);
         Console = new ConsoleViewModel(coordinator);
         Modules = new ModulesViewModel(coordinator);
+        Updates = new UpdatesViewModel(coordinator);
         Settings = new SettingsViewModel(coordinator);
         Schedules = new SchedulesViewModel(coordinator);
 
@@ -39,7 +41,9 @@ public sealed partial class MainViewModel : ObservableObject
         _uptimeTimer.Tick += (_, _) =>
         {
             World.RefreshUptime();
+            World.RefreshResources();
             Auth.RefreshUptime();
+            Auth.RefreshResources();
             MySqlState = _coordinator.MySql.GetState();
         };
         _uptimeTimer.Start();

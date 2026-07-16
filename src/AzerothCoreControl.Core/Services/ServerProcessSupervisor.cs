@@ -147,6 +147,26 @@ public sealed class ServerProcessSupervisor : IDisposable
         await handle.WaitForExitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Snapshot the running process's memory (working set) and cumulative CPU time.
+    /// Returns false when not running. The caller computes CPU% from deltas between snapshots.
+    /// </summary>
+    public bool TryGetResourceSnapshot(out long workingSetBytes, out TimeSpan cpuTime)
+    {
+        lock (_gate)
+        {
+            if (_process != null && _state == ServerState.Running)
+            {
+                workingSetBytes = _process.WorkingSetBytes;
+                cpuTime = _process.TotalProcessorTime;
+                return true;
+            }
+        }
+        workingSetBytes = 0;
+        cpuTime = TimeSpan.Zero;
+        return false;
+    }
+
     /// <summary>Send a raw line to the process's stdin (worldserver console command).</summary>
     public void SendConsole(string command)
     {

@@ -12,6 +12,7 @@
     <RootNamespace>AzerothCoreControl.App</RootNamespace>
     <AssemblyName>AzerothCoreControl</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
     <!-- Allows building this Windows-only WPF app on the Linux dev box (build only, not run). -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Version>0.1.0</Version>
@@ -28,6 +29,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AzerothCoreControl.Core\AzerothCoreControl.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embed the icon so the window/tray can load it via a pack URI. -->
+    <Resource Include="Assets\appicon.ico" />
   </ItemGroup>
 
 </Project>

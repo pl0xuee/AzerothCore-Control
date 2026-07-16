@@ -12,6 +12,12 @@ public interface IProcessHandle : IDisposable
     /// <summary>Exit code — only meaningful once <see cref="HasExited"/> is true.</summary>
     int ExitCode { get; }
 
+    /// <summary>Physical memory (working set) in bytes; 0 if the process has exited/is unavailable.</summary>
+    long WorkingSetBytes { get; }
+
+    /// <summary>Total CPU time consumed so far; <see cref="TimeSpan.Zero"/> if unavailable.</summary>
+    TimeSpan TotalProcessorTime { get; }
+
     /// <summary>Raised once when the process exits. Fires on a background thread.</summary>
     event EventHandler? Exited;
 

@@ -50,6 +50,34 @@ public sealed class SystemProcessHandle : IProcessHandle
     public bool HasExited => _process.HasExited;
     public int ExitCode => _process.ExitCode;
 
+    public long WorkingSetBytes
+    {
+        get
+        {
+            try
+            {
+                if (_process.HasExited) return 0;
+                _process.Refresh();
+                return _process.WorkingSet64;
+            }
+            catch { return 0; }
+        }
+    }
+
+    public TimeSpan TotalProcessorTime
+    {
+        get
+        {
+            try
+            {
+                if (_process.HasExited) return TimeSpan.Zero;
+                _process.Refresh();
+                return _process.TotalProcessorTime;
+            }
+            catch { return TimeSpan.Zero; }
+        }
+    }
+
     public void WriteStdin(string line)
     {
         if (_process.HasExited)

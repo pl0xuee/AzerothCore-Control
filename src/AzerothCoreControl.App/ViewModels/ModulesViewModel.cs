@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using AzerothCoreControl.Core.Models;
 using AzerothCoreControl.Core.Services;
 using AzerothCoreControl.App.Services;
@@ -8,20 +7,13 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AzerothCoreControl.App.ViewModels;
 
-/// <summary>Modules tab: lists installed modules with update status, plus the app self-update button.</summary>
+/// <summary>Modules tab: lists installed modules with GitHub update status and pull/build actions.</summary>
 public sealed partial class ModulesViewModel : ObservableObject
 {
     private readonly ServerCoordinator _coordinator;
 
     [ObservableProperty] private bool _isChecking;
     [ObservableProperty] private string _status = "Not checked yet.";
-    [ObservableProperty] private string? _appUpdateMessage;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasAppUpdate))]
-    private ReleaseInfo? _availableAppUpdate;
-
-    public bool HasAppUpdate => AvailableAppUpdate != null;
 
     public ObservableCollection<ModuleRowViewModel> Modules { get; } = new();
 
@@ -60,39 +52,6 @@ public sealed partial class ModulesViewModel : ObservableObject
         }
     }
 
-    /// <summary>The "Update" button the user asked for — checks this app's GitHub releases.</summary>
-    [RelayCommand]
-    private async Task CheckForAppUpdateAsync()
-    {
-        AppUpdateMessage = "Checking for a new release…";
-        try
-        {
-            var release = await _coordinator.Releases.CheckForAppUpdateAsync().ConfigureAwait(true);
-            if (release == null)
-            {
-                AvailableAppUpdate = null;
-                AppUpdateMessage = $"You're on the latest version ({GitHubReleaseService.CurrentAppVersion}).";
-            }
-            else
-            {
-                AvailableAppUpdate = release;
-                AppUpdateMessage = $"Update available: {release.Name} (published {release.PublishedAt:yyyy-MM-dd}).";
-            }
-        }
-        catch (Exception ex)
-        {
-            AppUpdateMessage = "Update check failed: " + ex.Message;
-        }
-    }
-
-    /// <summary>Open the release page / download the new version's asset.</summary>
-    [RelayCommand]
-    private void DownloadAppUpdate()
-    {
-        if (AvailableAppUpdate == null) return;
-        // Open the release page in the browser; the packaged .exe asset is attached there.
-        Process.Start(new ProcessStartInfo(AvailableAppUpdate.HtmlUrl) { UseShellExecute = true });
-    }
 }
 
 /// <summary>One row in the modules table.</summary>

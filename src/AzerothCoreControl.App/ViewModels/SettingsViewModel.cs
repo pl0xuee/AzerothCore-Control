@@ -1,7 +1,9 @@
+using System.IO;
 using AzerothCoreControl.Core.Services;
 using AzerothCoreControl.App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 
 namespace AzerothCoreControl.App.ViewModels;
 
@@ -43,6 +45,56 @@ public sealed partial class SettingsViewModel : ObservableObject
         AutoRestart = s.Watchdog.AutoRestart;
         AutoStartServers = s.AutoStartServers;
         LaunchOnBoot = s.LaunchOnBoot;
+    }
+
+    // ---- Browse buttons -------------------------------------------------
+
+    [RelayCommand]
+    private void BrowseRunDir() => RunDirectory = PickFolder(RunDirectory) ?? RunDirectory;
+
+    [RelayCommand]
+    private void BrowseSourceDir() => SourceDirectory = PickFolder(SourceDirectory) ?? SourceDirectory;
+
+    [RelayCommand]
+    private void BrowseBuildDir() => BuildDirectory = PickFolder(BuildDirectory) ?? BuildDirectory;
+
+    [RelayCommand]
+    private void BrowseBackupDir() => BackupDirectory = PickFolder(BackupDirectory) ?? BackupDirectory;
+
+    [RelayCommand]
+    private void BrowseMysqlDump()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Locate mysqldump.exe",
+            Filter = "Executable (*.exe)|*.exe|All files (*.*)|*.*",
+            InitialDirectory = SafeDir(MysqlDumpPath),
+        };
+        if (dialog.ShowDialog() == true)
+            MysqlDumpPath = dialog.FileName;
+    }
+
+    private static string? PickFolder(string? current)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Select a folder",
+            InitialDirectory = SafeDir(current) ?? "",
+        };
+        return dialog.ShowDialog() == true ? dialog.FolderName : null;
+    }
+
+    /// <summary>Return an existing directory to seed a dialog, or null.</summary>
+    private static string? SafeDir(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try
+        {
+            if (Directory.Exists(path)) return path;
+            var parent = Directory.GetParent(path)?.FullName;
+            return parent != null && Directory.Exists(parent) ? parent : null;
+        }
+        catch { return null; }
     }
 
     [RelayCommand]

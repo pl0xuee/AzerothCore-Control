@@ -4,15 +4,14 @@
              xmlns:tb="http://www.hardcodet.net/taskbar">
     <Application.Resources>
         <ResourceDictionary>
-            <!-- App-wide status colors -->
-            <SolidColorBrush x:Key="RunningBrush" Color="#2ECC71" />
-            <SolidColorBrush x:Key="StoppedBrush" Color="#95A5A6" />
-            <SolidColorBrush x:Key="CrashedBrush" Color="#E74C3C" />
-            <SolidColorBrush x:Key="RestartingBrush" Color="#F39C12" />
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
 
             <!-- System-tray icon with a quick-action menu. Keeps supervising while minimized. -->
             <tb:TaskbarIcon x:Key="TrayIcon"
                             ToolTipText="AzerothCore Control"
+                            IconSource="/Assets/appicon.ico"
                             Visibility="Visible">
                 <tb:TaskbarIcon.ContextMenu>
                     <ContextMenu>

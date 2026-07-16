@@ -20,6 +20,8 @@ public sealed class FakeProcessHandle : IProcessHandle
     public int Id => 1234;
     public bool HasExited => _exited;
     public int ExitCode => _exitCode;
+    public long WorkingSetBytes { get; set; }
+    public TimeSpan TotalProcessorTime { get; set; }
 
     public event EventHandler? Exited;
     public event EventHandler<string>? OutputLine;
