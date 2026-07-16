@@ -31,6 +31,15 @@ public sealed class AppSettings
     /// <summary>How often to poll GitHub for module updates.</summary>
     public TimeSpan ModuleCheckInterval { get; set; } = TimeSpan.FromHours(6);
 
+    /// <summary>Automatically check GitHub for a newer version of this app (on launch + on interval).</summary>
+    public bool AutoCheckForUpdates { get; set; } = true;
+
+    /// <summary>When an app update is found, download and install it automatically (in-place, then relaunch).</summary>
+    public bool AutoInstallUpdates { get; set; }
+
+    /// <summary>How often to check for app updates when <see cref="AutoCheckForUpdates"/> is on.</summary>
+    public TimeSpan AppUpdateCheckInterval { get; set; } = TimeSpan.FromHours(6);
+
     /// <summary>Launch this app when Windows starts.</summary>
     public bool LaunchOnBoot { get; set; }
 

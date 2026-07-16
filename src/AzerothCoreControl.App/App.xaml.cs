@@ -66,6 +66,16 @@ public partial class App : System.Windows.Application
 
         if (_coordinator.Settings.AutoStartServers)
             _ = _coordinator.StartAllAsync();
+
+        // Automatic app self-update: when an update is staged, exit so the swap batch can replace the exe.
+        _coordinator.AppUpdater.RestartRequired += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (MainWindow is MainWindow mw) mw.CloseForReal();
+            Shutdown();
+        });
+        _coordinator.AppUpdater.UpdateAvailable += release => Dispatcher.BeginInvoke(() =>
+            MainViewModel.Updates.AvailableAppUpdate = release);
+        _coordinator.AppUpdater.StartBackgroundChecks();
     }
 
     private void TrayOpen_Click(object sender, RoutedEventArgs e)
@@ -83,7 +93,10 @@ public partial class App : System.Windows.Application
     {
         _trayIcon?.Dispose();
         if (_coordinator != null)
+        {
+            _coordinator.AppUpdater.Stop();
             await _coordinator.DisposeAsync();
+        }
         await Log.CloseAndFlushAsync();
         _singleInstance?.Dispose();
         base.OnExit(e);

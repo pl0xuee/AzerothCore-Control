@@ -43,12 +43,16 @@ public sealed class ServerCoordinator : IAsyncDisposable
             loggerFactory.CreateLogger<UpdateOrchestrator>());
         Schedule = new ScheduleService(accessor, World, Auth, Backup, logger: loggerFactory.CreateLogger<ScheduleService>());
 
+        AppUpdater = new AppUpdater(this);
+
         // Route notable lifecycle events (crashes, breaker trips) to the notification sinks.
         World.Notable += OnNotable;
         Auth.Notable += OnNotable;
 
         Schedule.Start();
     }
+
+    public AppUpdater AppUpdater { get; }
 
     public ServerProcessSupervisor World { get; }
     public ServerProcessSupervisor Auth { get; }
