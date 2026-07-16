@@ -295,6 +295,11 @@ public sealed class ServerProcessSupervisor : IDisposable
             else
             {
                 var classification = ExitCodePolicy.Classify(exitCode);
+                // Only worldserver has a restart command (RESTART_EXIT_CODE=1). For authserver, exit 1 is
+                // just an error — treat it as a crash so it can't infinite-restart with no backoff.
+                if (_kind != ServerKind.World && classification == ExitClassification.RestartRequested)
+                    classification = ExitClassification.Crash;
+
                 _log.LogInformation("{Server} exited with code {Code} ({Class}) after {Seconds:0}s. Last output: {Output}",
                     _kind, exitCode, classification, ranFor?.TotalSeconds ?? 0, lastOutput ?? "(none)");
 
@@ -317,8 +322,14 @@ public sealed class ServerProcessSupervisor : IDisposable
                             $"{_kind.DisplayName()} shut down cleanly.");
                         break;
 
+                    case ExitClassification.RestartRequested when quickExit:
+                        // Asked to "restart" but died immediately — it's failing to start, not restarting.
+                        // Route through the crash handler so the fast breaker can stop the loop.
+                        notify = HandleCrashLocked(exitCode, lastOutput, quickExit: true, out afterUnlock);
+                        break;
+
                     case ExitClassification.RestartRequested:
-                        // Explicit .server restart — honor it regardless of the crash auto-restart toggle.
+                        // Explicit, legitimate .server restart after running for a while.
                         _consecutiveCrashes = 0;
                         _consecutiveQuickCrashes = 0;
                         notify = new SupervisorEvent(_kind, SupervisorEventKind.Restarting,

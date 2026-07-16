@@ -38,8 +38,9 @@ public static class AcoreConfigReader
             return new AcoreDbDetection();
 
         var infos = new List<AcoreDbInfo>();
-        // Prefer the user's live .conf; fall back to the shipped .conf.dist template.
-        foreach (var confName in new[] { "worldserver.conf", "authserver.conf", "worldserver.conf.dist", "authserver.conf.dist" })
+        // Only the user's real .conf files — NEVER the .conf.dist templates, which hold placeholder
+        // credentials/database names rather than the actual configured database.
+        foreach (var confName in new[] { "worldserver.conf", "authserver.conf" })
         {
             var path = Path.Combine(runDirectory, confName);
             if (!File.Exists(path))

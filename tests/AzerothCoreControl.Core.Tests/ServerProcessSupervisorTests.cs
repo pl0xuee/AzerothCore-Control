@@ -12,6 +12,10 @@ public class ServerProcessSupervisorTests
 
     private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, List<SupervisorEvent> events, FakeTimeProvider time)
         CreateWorld(Action<WatchdogSettings>? configure = null, bool autoExitOnShutdown = false)
+        => Create(ServerKind.World, configure, autoExitOnShutdown);
+
+    private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, List<SupervisorEvent> events, FakeTimeProvider time)
+        Create(ServerKind kind, Action<WatchdogSettings>? configure = null, bool autoExitOnShutdown = false)
     {
         var settings = new AppSettings();
         // Zero backoff keeps restart behavioral tests deterministic (no timer to advance).
@@ -22,7 +26,7 @@ public class ServerProcessSupervisorTests
         var time = new FakeTimeProvider();
         var launcher = new FakeProcessLauncher { AutoExitOnShutdown = autoExitOnShutdown };
         var events = new List<SupervisorEvent>();
-        var sup = new ServerProcessSupervisor(ServerKind.World, launcher, () => settings, time);
+        var sup = new ServerProcessSupervisor(kind, launcher, () => settings, time);
         sup.Notable += e => { lock (events) events.Add(e); };
         return (sup, launcher, events, time);
     }
@@ -70,16 +74,18 @@ public class ServerProcessSupervisorTests
     }
 
     [Fact]
-    public async Task RestartRequested_ExitCode1_Relaunches()
+    public async Task WorldServer_ExitCode1_ImmediatelyAfterStart_IsStartupFailure_ButRelaunches()
     {
+        // Exit 1 right after start isn't a real ".server restart" — it's a startup failure. It still
+        // relaunches (with backoff) but is reported as a crash, and the fast breaker can stop the loop.
         var (sup, launcher, events, _) = CreateWorld();
         sup.Start("worldserver.exe");
         await launcher.WaitForLaunchCountAsync(1, Timeout);
 
-        launcher.Last.SimulateExit(1); // RESTART_EXIT_CODE
+        launcher.Last.SimulateExit(1);
 
         await launcher.WaitForLaunchCountAsync(2, Timeout);
-        Assert.Contains(events, e => e.Kind == SupervisorEventKind.Restarting);
+        Assert.Contains(events, e => e.Kind == SupervisorEventKind.Crashed);
     }
 
     [Fact]
@@ -144,6 +150,40 @@ public class ServerProcessSupervisorTests
         await AssertEventuallyAsync(() => sup.State == ServerState.Crashed);
         Assert.Equal(3, launcher.LaunchCount); // no 4th launch
         Assert.Contains(events, e => e.Kind == SupervisorEventKind.CrashLoopTripped);
+    }
+
+    [Fact]
+    public async Task AuthServer_ExitCode1_IsTreatedAsCrash_NotInfiniteRestart()
+    {
+        // Regression: authserver has no restart command, so exit 1 is an error — it must NOT be honored as
+        // an unlimited zero-backoff "restart request" (that caused hundreds of restarts).
+        var (sup, launcher, events, _) = Create(ServerKind.Auth, w => w.StartupFailureLimit = 3);
+        sup.Start("authserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        launcher.Last.SimulateExit(1);
+        await launcher.WaitForLaunchCountAsync(2, Timeout);
+        launcher.Last.SimulateExit(1);
+        await launcher.WaitForLaunchCountAsync(3, Timeout);
+        launcher.Last.SimulateExit(1);
+
+        await AssertEventuallyAsync(() => sup.State == ServerState.Crashed);
+        Assert.Equal(3, launcher.LaunchCount); // stopped by the fast breaker, not looping forever
+    }
+
+    [Fact]
+    public async Task WorldServer_LegitRestartAfterRunning_StillRestarts()
+    {
+        // A real .server restart (exit 1) after the world server has been running should still relaunch.
+        var (sup, launcher, events, time) = CreateWorld();
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        time.Advance(TimeSpan.FromMinutes(5)); // ran for a while
+        launcher.Last.SimulateExit(1);
+
+        await launcher.WaitForLaunchCountAsync(2, Timeout);
+        Assert.Contains(events, e => e.Kind == SupervisorEventKind.Restarting);
     }
 
     [Fact]

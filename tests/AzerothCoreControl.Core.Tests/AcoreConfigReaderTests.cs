@@ -34,18 +34,16 @@ public class AcoreConfigReaderTests : IDisposable
     }
 
     [Fact]
-    public void Detect_FallsBackToDistTemplate_WhenNoConf()
+    public void Detect_IgnoresDistTemplate_OnlyReadsRealConf()
     {
+        // .conf.dist holds placeholder values and must NOT be used for detection.
         File.WriteAllText(Path.Combine(_dir, "authserver.conf.dist"), """
-            LoginDatabaseInfo = "127.0.0.1;3306;root;pw;acore_auth"
+            LoginDatabaseInfo = "127.0.0.1;3306;root;placeholder;acore_auth"
             """);
 
         var result = AcoreConfigReader.Detect(_dir);
 
-        Assert.True(result.Found);
-        Assert.Equal("127.0.0.1", result.Host);
-        Assert.Single(result.Databases);
-        Assert.Equal("acore_auth", result.Databases[0]);
+        Assert.False(result.Found);
     }
 
     [Fact]

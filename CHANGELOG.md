@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fast startup-failure breaker** — a server that dies immediately several times in a row (can't start)
   now stops being retried quickly, instead of crash-looping and churning restarts/notifications.
 - **MySQL auto-detection** — "Auto-detect paths" now also finds your MySQL/MariaDB Windows service and
-  reads your database names and connection details straight from `worldserver.conf`.
+  reads your database names and connection details straight from your `worldserver.conf` (real `.conf`
+  only — never the `.conf.dist` templates).
 
 ### Changed
 - The main window opens as a normal centered window (no longer maximized on launch).
@@ -33,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one-way. The show/restore path was also hardened as a safety net.
 - **"Restart world" no longer occasionally leaves the server stopped** — stopping now waits for the state
   to fully settle before a restart begins (fixed a race between the drain and the exit handler).
+- **The auth server no longer restarts endlessly** — exit code 1 was being honored as an unlimited,
+  no-backoff "restart request", but for authserver (which has no restart command) exit 1 just means an
+  error. It's now treated as a crash, and a server that "requests a restart" but dies immediately is
+  handled as a startup failure so the breaker can stop the loop.
 - A failed launch or failed auto-restart no longer leaves a server stuck in the "Starting…" state.
 - **The app no longer freezes when servers start** — server console output is batched to the UI instead of
   marshaling every line individually (startup emits thousands of lines); auto-start on launch runs entirely
