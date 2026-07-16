@@ -29,8 +29,8 @@ public sealed partial class MainViewModel : ObservableObject
     public MainViewModel(ServerCoordinator coordinator)
     {
         _coordinator = coordinator;
-        World = new ServerStatusViewModel(coordinator.World);
-        Auth = new ServerStatusViewModel(coordinator.Auth);
+        World = new ServerStatusViewModel(coordinator.World, coordinator);
+        Auth = new ServerStatusViewModel(coordinator.Auth, coordinator);
         Console = new ConsoleViewModel(coordinator);
         Modules = new ModulesViewModel(coordinator);
         Updates = new UpdatesViewModel(coordinator);

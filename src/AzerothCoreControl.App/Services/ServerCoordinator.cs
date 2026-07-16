@@ -93,9 +93,35 @@ public sealed class ServerCoordinator : IAsyncDisposable
 
     public async Task StopAllAsync(bool graceful = true, CancellationToken cancellationToken = default)
     {
+        // Drain the world server first (players), then the auth server.
         await World.StopAsync(graceful, cancellationToken).ConfigureAwait(false);
         await Auth.StopAsync(graceful, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Start a single server (ensuring MySQL first if required).</summary>
+    public async Task StartServerAsync(ServerKind kind, CancellationToken cancellationToken = default)
+    {
+        var runDir = _settings.RunDirectory;
+        if (string.IsNullOrWhiteSpace(runDir))
+            throw new InvalidOperationException("Run directory is not configured. Open Settings to set it.");
+
+        if (_settings.MySql.RequireForStart)
+        {
+            var ok = await MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            if (!ok && MySql.GetState() != MySqlState.NotConfigured)
+                throw new InvalidOperationException("MySQL is not running and could not be started.");
+        }
+
+        var sup = kind == ServerKind.World ? World : Auth;
+        sup.Start(Path.Combine(runDir, kind.ExecutableName()), workingDirectory: runDir);
+    }
+
+    /// <summary>
+    /// Stop a single server. For the world server this is always a SAFE shutdown — it sends
+    /// <c>.server shutdown &lt;delay&gt;</c> so players are warned and characters are saved before exit.
+    /// </summary>
+    public Task StopServerAsync(ServerKind kind, CancellationToken cancellationToken = default)
+        => (kind == ServerKind.World ? World : Auth).StopAsync(graceful: true, cancellationToken);
 
     private void OnNotable(SupervisorEvent e)
     {

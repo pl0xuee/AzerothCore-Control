@@ -1,7 +1,9 @@
 using System.Windows.Threading;
 using AzerothCoreControl.Core.Models;
 using AzerothCoreControl.Core.Services;
+using AzerothCoreControl.App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AzerothCoreControl.App.ViewModels;
 
@@ -9,6 +11,7 @@ namespace AzerothCoreControl.App.ViewModels;
 public sealed partial class ServerStatusViewModel : ObservableObject
 {
     private readonly ServerProcessSupervisor _supervisor;
+    private readonly ServerCoordinator _coordinator;
     private readonly Dispatcher _dispatcher;
 
     [ObservableProperty] private ServerState _state;
@@ -26,9 +29,13 @@ public sealed partial class ServerStatusViewModel : ObservableObject
     private TimeSpan _lastCpuTime;
     private DateTimeOffset _lastSample;
 
-    public ServerStatusViewModel(ServerProcessSupervisor supervisor)
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private string _actionMessage = "";
+
+    public ServerStatusViewModel(ServerProcessSupervisor supervisor, ServerCoordinator coordinator)
     {
         _supervisor = supervisor;
+        _coordinator = coordinator;
         _dispatcher = Dispatcher.CurrentDispatcher;
         _state = supervisor.State;
 
@@ -36,7 +43,55 @@ public sealed partial class ServerStatusViewModel : ObservableObject
         {
             State = s;
             RestartCount = supervisor.RestartCount;
+            StartServerCommand.NotifyCanExecuteChanged();
+            StopServerCommand.NotifyCanExecuteChanged();
         });
+    }
+
+    private bool CanStart => !IsBusy && State is ServerState.Stopped or ServerState.Crashed;
+    private bool CanStop => !IsBusy && State is ServerState.Running or ServerState.Restarting;
+
+    [RelayCommand(CanExecute = nameof(CanStart))]
+    private async Task StartServerAsync()
+    {
+        IsBusy = true;
+        ActionMessage = "Starting…";
+        try
+        {
+            await _coordinator.StartServerAsync(Kind).ConfigureAwait(true);
+            ActionMessage = "";
+        }
+        catch (Exception ex)
+        {
+            ActionMessage = ex.Message;
+        }
+        finally { IsBusy = false; RefreshCommands(); }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async Task StopServerAsync()
+    {
+        IsBusy = true;
+        // For the world server this is a SAFE shutdown (in-game warning + save) — may take a few seconds.
+        ActionMessage = Kind == ServerKind.World ? "Saving & shutting down…" : "Stopping…";
+        try
+        {
+            await _coordinator.StopServerAsync(Kind).ConfigureAwait(true);
+            ActionMessage = "";
+        }
+        catch (Exception ex)
+        {
+            ActionMessage = ex.Message;
+        }
+        finally { IsBusy = false; RefreshCommands(); }
+    }
+
+    partial void OnIsBusyChanged(bool value) => RefreshCommands();
+
+    private void RefreshCommands()
+    {
+        StartServerCommand.NotifyCanExecuteChanged();
+        StopServerCommand.NotifyCanExecuteChanged();
     }
 
     public string Name => _supervisor.Kind.DisplayName();

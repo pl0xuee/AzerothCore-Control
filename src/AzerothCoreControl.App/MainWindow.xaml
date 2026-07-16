@@ -67,6 +67,12 @@
                                         <TextBlock Text="{Binding MemoryText}" FontSize="16" />
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button Content="Start" Command="{Binding StartServerCommand}" Style="{StaticResource AccentButton}" />
+                                    <Button Content="Stop" Command="{Binding StopServerCommand}" Style="{StaticResource SubtleButton}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ActionMessage}" Style="{StaticResource Muted}" FontSize="11"
+                                           Margin="4,6,0,0" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
 
@@ -97,6 +103,12 @@
                                         <TextBlock Text="{Binding MemoryText}" FontSize="16" />
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button Content="Start" Command="{Binding StartServerCommand}" Style="{StaticResource AccentButton}" />
+                                    <Button Content="Stop" Command="{Binding StopServerCommand}" Style="{StaticResource SubtleButton}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ActionMessage}" Style="{StaticResource Muted}" FontSize="11"
+                                           Margin="4,6,0,0" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
 
