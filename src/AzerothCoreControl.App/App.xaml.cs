@@ -102,8 +102,26 @@ public partial class App : System.Windows.Application
         if (!startMinimized)
             BringToForeground();
 
+        // Auto-start runs entirely off the UI thread so launching the server processes (and any MySQL
+        // service wait) can't freeze the window as it comes up.
         if (_coordinator.Settings.AutoStartServers)
-            _ = _coordinator.StartAllAsync();
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _coordinator.StartAllAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Auto-start on launch failed");
+                    await _coordinator.Notifications
+                        .NotifyAsync("AzerothCore Control", "Auto-start failed: " + ex.Message,
+                            Core.Services.NotificationSeverity.Warning)
+                        .ConfigureAwait(false);
+                }
+            });
+        }
 
         // Automatic app self-update: when an update is staged, exit so the swap batch can replace the exe.
         _coordinator.AppUpdater.RestartRequired += () => Dispatcher.BeginInvoke(() =>

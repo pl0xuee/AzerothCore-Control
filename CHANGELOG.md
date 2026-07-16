@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Restart world" no longer occasionally leaves the server stopped** — stopping now waits for the state
   to fully settle before a restart begins (fixed a race between the drain and the exit handler).
 - A failed launch or failed auto-restart no longer leaves a server stuck in the "Starting…" state.
+- **The app no longer freezes when servers start** — server console output is now batched to the UI
+  instead of marshaling every line individually (server startup emits thousands of lines), and auto-start
+  on launch runs entirely off the UI thread.
 - Closed a race that could spawn a **duplicate server process** when a manual start collided with an
   automatic restart.
 - Update checks that run on a background thread no longer touch UI state off-thread; the in-place update
