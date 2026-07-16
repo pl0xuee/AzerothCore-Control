@@ -45,6 +45,7 @@ public sealed class ServerProcessSupervisor : IDisposable
     private ServerState _state = ServerState.Stopped;
     private bool _intentionalStop;
     private int _consecutiveCrashes;
+    private int _consecutiveQuickCrashes;
     private int _restartCount;
     private DateTimeOffset? _runningSince;
     private CancellationTokenSource? _restartCts;
@@ -277,7 +278,7 @@ public sealed class ServerProcessSupervisor : IDisposable
             // How long did it run? A server that exits within a few seconds almost certainly failed to
             // start (bad config, DB unreachable, missing files) rather than being stopped normally.
             var ranFor = _runningSince is { } started ? _time.GetUtcNow() - started : (TimeSpan?)null;
-            var quickExit = ranFor is { } r && r < TimeSpan.FromSeconds(15);
+            var quickExit = ranFor is { } r && r < Watchdog.StartupFailureWindow;
             var lastOutput = LastMeaningfulOutputLocked();
 
             DetachLocked(handle);
@@ -287,6 +288,7 @@ public sealed class ServerProcessSupervisor : IDisposable
             {
                 _intentionalStop = false;
                 _consecutiveCrashes = 0;
+                _consecutiveQuickCrashes = 0;
                 SetStateLocked(ServerState.Stopped);
                 notify = new SupervisorEvent(_kind, SupervisorEventKind.StoppedByUser, $"{_kind.DisplayName()} stopped.");
             }
@@ -309,6 +311,7 @@ public sealed class ServerProcessSupervisor : IDisposable
 
                     case ExitClassification.CleanShutdown:
                         _consecutiveCrashes = 0;
+                        _consecutiveQuickCrashes = 0;
                         SetStateLocked(ServerState.Stopped);
                         notify = new SupervisorEvent(_kind, SupervisorEventKind.CleanShutdown,
                             $"{_kind.DisplayName()} shut down cleanly.");
@@ -317,6 +320,7 @@ public sealed class ServerProcessSupervisor : IDisposable
                     case ExitClassification.RestartRequested:
                         // Explicit .server restart — honor it regardless of the crash auto-restart toggle.
                         _consecutiveCrashes = 0;
+                        _consecutiveQuickCrashes = 0;
                         notify = new SupervisorEvent(_kind, SupervisorEventKind.Restarting,
                             $"{_kind.DisplayName()} requested a restart.");
                         afterUnlock = () => ScheduleRestart(TimeSpan.Zero);
@@ -325,7 +329,7 @@ public sealed class ServerProcessSupervisor : IDisposable
 
                     case ExitClassification.Crash:
                     default:
-                        notify = HandleCrashLocked(exitCode, lastOutput, out afterUnlock);
+                        notify = HandleCrashLocked(exitCode, lastOutput, quickExit, out afterUnlock);
                         break;
                 }
             }
@@ -342,7 +346,7 @@ public sealed class ServerProcessSupervisor : IDisposable
     }
 
     /// <summary>Crash handling under the lock. Decides between backoff-restart and tripping the breaker.</summary>
-    private SupervisorEvent HandleCrashLocked(int exitCode, string? lastOutput, out Action? afterUnlock)
+    private SupervisorEvent HandleCrashLocked(int exitCode, string? lastOutput, bool quickExit, out Action? afterUnlock)
     {
         afterUnlock = null;
         var now = _time.GetUtcNow();
@@ -350,12 +354,23 @@ public sealed class ServerProcessSupervisor : IDisposable
 
         _recentCrashes.Add(now);
         _recentCrashes.RemoveAll(t => now - t > wd.CrashWindow);
+        _consecutiveQuickCrashes = quickExit ? _consecutiveQuickCrashes + 1 : 0;
 
         if (!wd.AutoRestart)
         {
             SetStateLocked(ServerState.Crashed);
             return new SupervisorEvent(_kind, SupervisorEventKind.Crashed,
                 $"{_kind.DisplayName()} crashed (exit {exitCode}). Auto-restart is disabled. {Reason(lastOutput)}");
+        }
+
+        // Fast breaker: a server that dies almost immediately, repeatedly, isn't going to start — stop
+        // hammering it (which otherwise churns restarts/notifications) and say why.
+        if (_consecutiveQuickCrashes >= wd.StartupFailureLimit)
+        {
+            SetStateLocked(ServerState.Crashed);
+            return new SupervisorEvent(_kind, SupervisorEventKind.CrashLoopTripped,
+                $"{_kind.DisplayName()} keeps failing to start ({_consecutiveQuickCrashes} times in a row). " +
+                $"Auto-restart halted — check the configuration/database. {Reason(lastOutput)}");
         }
 
         if (_recentCrashes.Count >= wd.CrashLoopThreshold)

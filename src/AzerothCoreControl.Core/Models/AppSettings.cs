@@ -65,6 +65,15 @@ public sealed class WatchdogSettings
 
     public TimeSpan CrashWindow { get; set; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// If the server exits almost immediately after starting this many times in a row (a server that
+    /// can't start — bad config, DB unreachable), stop retrying quickly instead of hammering it.
+    /// </summary>
+    public int StartupFailureLimit { get; set; } = 3;
+
+    /// <summary>A run shorter than this counts as an immediate startup failure.</summary>
+    public TimeSpan StartupFailureWindow { get; set; } = TimeSpan.FromSeconds(15);
+
     /// <summary>Seconds of in-game warning (<c>.server shutdown &lt;n&gt;</c>) before a graceful stop.</summary>
     public int GracefulShutdownSeconds { get; set; } = 30;
 }

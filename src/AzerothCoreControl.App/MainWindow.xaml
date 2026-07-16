@@ -5,7 +5,6 @@
         xmlns:beh="clr-namespace:AzerothCoreControl.App.Behaviors"
         Title="AzerothCore Control" Height="740" Width="1060"
         MinHeight="560" MinWidth="880"
-        WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
         Icon="/Assets/appicon.ico"
         Background="{StaticResource WindowBrush}"
@@ -314,6 +313,10 @@
 
                         <TextBlock Text="MySQL service name (e.g. MySQL80)" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding MySqlServiceName}" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Detected databases (from your worldserver.conf)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding DetectedDatabases}" IsReadOnly="True" Margin="0,0,0,8"
+                                 Foreground="{StaticResource TextSecondaryBrush}" />
 
                         <TextBlock Text="mysqldump path" Style="{StaticResource FieldLabel}" />
                         <DockPanel Margin="0,0,0,8">

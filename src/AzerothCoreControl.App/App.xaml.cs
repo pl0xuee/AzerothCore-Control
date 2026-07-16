@@ -144,12 +144,11 @@ public partial class App : System.Windows.Application
                 return;
             if (!window.IsVisible)
             {
-                window.WindowState = WindowState.Maximized;
                 window.Show();
             }
             else if (window.WindowState == WindowState.Minimized)
             {
-                window.WindowState = WindowState.Maximized;
+                window.WindowState = WindowState.Normal;
             }
             window.Activate();
             // Brief topmost flip reliably pulls the window in front of other apps.

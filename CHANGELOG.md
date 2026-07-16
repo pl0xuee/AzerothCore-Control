@@ -10,9 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup-failure diagnostics** — if a server exits right after starting (e.g. the database is
   unreachable), the notification now includes the server's last output line explaining why, instead of
   silently doing nothing.
+- **Fast startup-failure breaker** — a server that dies immediately several times in a row (can't start)
+  now stops being retried quickly, instead of crash-looping and churning restarts/notifications.
+- **MySQL auto-detection** — "Auto-detect paths" now also finds your MySQL/MariaDB Windows service and
+  reads your database names and connection details straight from `worldserver.conf`.
 
 ### Changed
-- The main window now opens **maximized** on launch.
+- The main window opens as a normal centered window (no longer maximized on launch).
 - Launching a second copy of the app now **brings the running window to the foreground** instead of doing
   nothing.
 - The app no longer exits when its window is closed — it stays in the tray until you choose Quit.

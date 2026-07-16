@@ -23,6 +23,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _autoRestart;
     [ObservableProperty] private bool _autoStartServers;
     [ObservableProperty] private bool _launchOnBoot;
+    [ObservableProperty] private string _detectedDatabases = "";
     [ObservableProperty] private string _saveResult = "";
 
     public SettingsViewModel(ServerCoordinator coordinator)
@@ -45,6 +46,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         AutoRestart = s.Watchdog.AutoRestart;
         AutoStartServers = s.AutoStartServers;
         LaunchOnBoot = s.LaunchOnBoot;
+        DetectedDatabases = string.Join(", ", s.MySql.Databases);
     }
 
     // ---- Browse buttons -------------------------------------------------
@@ -104,9 +106,40 @@ public sealed partial class SettingsViewModel : ObservableObject
         RunDirectory ??= detected.RunDirectory;
         SourceDirectory ??= detected.SourceDirectory;
         BuildDirectory ??= detected.BuildDirectory;
-        SaveResult = detected.HasWorldServer
-            ? "Found an AzerothCore install."
-            : "Could not auto-detect — set the paths manually.";
+
+        var messages = new List<string>
+        {
+            detected.HasWorldServer ? "Found AzerothCore install." : "No worldserver.exe found — set paths manually.",
+        };
+
+        // MySQL Windows service.
+        var services = _coordinator.MySql.DiscoverCandidateServices();
+        if (services.Count > 0)
+        {
+            if (string.IsNullOrWhiteSpace(MySqlServiceName))
+                MySqlServiceName = services[0];
+            messages.Add($"MySQL service: {MySqlServiceName}");
+        }
+
+        // Databases + connection details, read straight from AzerothCore's own .conf files.
+        var db = AcoreConfigReader.Detect(RunDirectory);
+        if (db.Found)
+        {
+            var mysql = _coordinator.Settings.MySql;
+            if (!string.IsNullOrWhiteSpace(db.Host)) mysql.Host = db.Host!;
+            if (db.Port is { } port) mysql.Port = port;
+            if (!string.IsNullOrWhiteSpace(db.User)) mysql.Username = db.User!;
+            if (db.Password != null) mysql.Password = db.Password;
+            mysql.Databases = db.Databases;
+            DetectedDatabases = string.Join(", ", db.Databases);
+            messages.Add($"Databases: {DetectedDatabases}");
+        }
+
+        // Default the backup folder next to the server if not set.
+        if (string.IsNullOrWhiteSpace(BackupDirectory) && !string.IsNullOrWhiteSpace(RunDirectory))
+            BackupDirectory = Path.Combine(RunDirectory!, "backups");
+
+        SaveResult = string.Join("   ·   ", messages);
     }
 
     [RelayCommand]

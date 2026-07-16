@@ -147,6 +147,32 @@ public class ServerProcessSupervisorTests
     }
 
     [Fact]
+    public async Task RepeatedImmediateCrashes_TripFastStartupBreaker()
+    {
+        // A server that dies immediately (can't start) should stop being hammered after StartupFailureLimit,
+        // well before the normal crash-loop threshold.
+        var (sup, launcher, events, _) = CreateWorld(w =>
+        {
+            w.StartupFailureLimit = 3;
+            w.CrashLoopThreshold = 20; // ensure the FAST breaker is what trips
+        });
+
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        // Each launched instance exits immediately (no time advanced => quick exit) with a crash code.
+        launcher.Last.SimulateExit(1_000);
+        await launcher.WaitForLaunchCountAsync(2, Timeout);
+        launcher.Last.SimulateExit(1_000);
+        await launcher.WaitForLaunchCountAsync(3, Timeout);
+        launcher.Last.SimulateExit(1_000);
+
+        await AssertEventuallyAsync(() => sup.State == ServerState.Crashed);
+        Assert.Equal(3, launcher.LaunchCount); // no 4th attempt
+        Assert.Contains(events, e => e.Kind == SupervisorEventKind.CrashLoopTripped && e.Message.Contains("failing to start"));
+    }
+
+    [Fact]
     public async Task UserStop_SuppressesRestart()
     {
         var (sup, launcher, _, _) = CreateWorld(autoExitOnShutdown: true);
