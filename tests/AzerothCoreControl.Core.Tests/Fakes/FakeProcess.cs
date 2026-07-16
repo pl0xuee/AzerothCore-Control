@@ -26,6 +26,7 @@ public sealed class FakeProcessHandle : IProcessHandle
     public event EventHandler<string>? ErrorLine;
 
     public void EmitOutput(string line) => OutputLine?.Invoke(this, line);
+    public void EmitError(string line) => ErrorLine?.Invoke(this, line);
 
     public void WriteStdin(string line)
     {
