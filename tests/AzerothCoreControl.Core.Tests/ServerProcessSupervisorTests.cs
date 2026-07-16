@@ -116,6 +116,24 @@ public class ServerProcessSupervisorTests
     }
 
     [Fact]
+    public async Task Crash_PrefersErrorLine_OverTrailingCleanup()
+    {
+        // Real AzerothCore case: the true error precedes the DB-pool cleanup line. Diagnostics should
+        // surface the error, not the trailing "connections ... closed" message.
+        var (sup, launcher, events, _) = CreateWorld(w => w.AutoRestart = false);
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        launcher.Last.EmitOutput("FATAL: database version mismatch, expected 'acore_world' r2024_01");
+        launcher.Last.EmitOutput("All connections on DatabasePool 'acore_wotlk_auth' closed.");
+        launcher.Last.SimulateExit(1);
+
+        await AssertEventuallyAsync(() => sup.State == ServerState.Crashed);
+        Assert.Contains(events, e => e.Message.Contains("database version mismatch"));
+        Assert.DoesNotContain(events, e => e.Kind == SupervisorEventKind.Crashed && e.Message.Contains("connections on DatabasePool") && !e.Message.Contains("mismatch"));
+    }
+
+    [Fact]
     public async Task Crash_WithAutoRestartDisabled_DoesNotRelaunch()
     {
         var (sup, launcher, events, _) = CreateWorld(w => w.AutoRestart = false);

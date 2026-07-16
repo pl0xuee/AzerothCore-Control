@@ -34,7 +34,7 @@ public sealed class ServerProcessSupervisor : IDisposable
     private readonly TimeProvider _time;
     private readonly ILogger _log;
 
-    private const int RecentOutputLimit = 20;
+    private const int RecentOutputLimit = 80;
 
     private readonly object _gate = new();
     private readonly List<DateTimeOffset> _recentCrashes = new();
@@ -241,16 +241,49 @@ public sealed class ServerProcessSupervisor : IDisposable
         OutputLine?.Invoke(_kind, line);
     }
 
-    /// <summary>Last non-empty output line, for diagnosing why a server exited (called under the lock).</summary>
+    // Words that mark the actual cause of a failure (as opposed to trailing cleanup output).
+    private static readonly string[] ErrorKeywords =
+    {
+        "error", "fatal", "cannot", "can't", "unable", "failed", "denied", "mismatch",
+        "missing", "not found", "exception", "refused", "outdated", "required version",
+        "does not exist", "no such", "aborted",
+    };
+
+    // Trailing shutdown/cleanup lines that are NOT the real cause (e.g. authserver's DB pool close).
+    private static readonly string[] NoiseFragments = { "connections on databasepool", "closed", "halting", "shutdown" };
+
+    /// <summary>
+    /// Pick the most useful output line explaining why the server exited (called under the lock).
+    /// Prefers the most recent error-looking line over trailing cleanup output; falls back to the last
+    /// non-cleanup line, then the last line.
+    /// </summary>
     private string? LastMeaningfulOutputLocked()
     {
-        for (var i = _recentOutput.Count - 1; i >= 0; i--)
+        var lines = _recentOutput
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .ToList();
+        if (lines.Count == 0)
+            return null;
+
+        // 1. Most recent line that looks like an actual error.
+        for (var i = lines.Count - 1; i >= 0; i--)
         {
-            var line = _recentOutput.ElementAt(i).Trim();
-            if (line.Length > 0)
-                return line;
+            var lower = lines[i].ToLowerInvariant();
+            if (ErrorKeywords.Any(lower.Contains))
+                return lines[i];
         }
-        return null;
+
+        // 2. Most recent line that isn't obviously trailing cleanup noise.
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            var lower = lines[i].ToLowerInvariant();
+            if (!NoiseFragments.Any(lower.Contains))
+                return lines[i];
+        }
+
+        // 3. Fall back to the very last line.
+        return lines[^1];
     }
 
     private void OnExited(object? sender, EventArgs e)
