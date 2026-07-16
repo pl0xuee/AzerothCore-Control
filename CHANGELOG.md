@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently doing nothing.
 
 ### Changed
+- Notifications are now only sent for **problems** (crashes, crash-loop) — routine "server started/stopped"
+  toasts were removed as noise (state is shown on the dashboard).
 - The main window now opens **maximized** on launch.
 - Launching a second copy of the app now **brings the running window to the foreground** instead of doing
   nothing.
