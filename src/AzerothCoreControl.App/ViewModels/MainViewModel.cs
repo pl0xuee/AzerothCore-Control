@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using System.Windows.Threading;
 using AzerothCoreControl.Core.Models;
 using AzerothCoreControl.Core.Services;
@@ -66,6 +67,26 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task StartMySqlAsync()
         => await RunBusy("Starting MySQL…", () => _coordinator.MySql.EnsureRunningAsync(TimeSpan.FromSeconds(30)));
+
+    /// <summary>Tray menu: restore and focus the main window (maximized).</summary>
+    [RelayCommand]
+    private void ShowWindow()
+    {
+        var window = System.Windows.Application.Current?.MainWindow;
+        if (window == null) return;
+        window.Show();
+        window.WindowState = WindowState.Maximized;
+        window.Activate();
+    }
+
+    /// <summary>Tray menu: really exit the app (bypasses hide-to-tray).</summary>
+    [RelayCommand]
+    private void QuitApp()
+    {
+        if (System.Windows.Application.Current?.MainWindow is MainWindow mw)
+            mw.CloseForReal();
+        System.Windows.Application.Current?.Shutdown();
+    }
 
     private async Task RunBusy(string message, Func<Task> action)
     {

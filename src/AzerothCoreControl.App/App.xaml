@@ -12,15 +12,17 @@
             <tb:TaskbarIcon x:Key="TrayIcon"
                             ToolTipText="AzerothCore Control"
                             IconSource="/Assets/appicon.ico"
+                            DoubleClickCommand="{Binding ShowWindowCommand}"
                             Visibility="Visible">
                 <tb:TaskbarIcon.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="Open window" Command="{Binding ShowWindowCommand}" />
+                        <Separator />
                         <MenuItem Header="Start all" Command="{Binding StartAllCommand}" />
                         <MenuItem Header="Stop all" Command="{Binding StopAllCommand}" />
                         <MenuItem Header="Restart world" Command="{Binding RestartWorldCommand}" />
                         <Separator />
-                        <MenuItem Header="Open window" Click="TrayOpen_Click" />
-                        <MenuItem Header="Quit" Click="TrayQuit_Click" />
+                        <MenuItem Header="Quit" Command="{Binding QuitAppCommand}" />
                     </ContextMenu>
                 </tb:TaskbarIcon.ContextMenu>
             </tb:TaskbarIcon>

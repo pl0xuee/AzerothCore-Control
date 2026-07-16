@@ -42,6 +42,23 @@ public partial class App : System.Windows.Application
             .CreateLogger();
         var loggerFactory = new SerilogLoggerFactory(Log.Logger);
 
+        // Global safety net: log unhandled UI/background exceptions and keep the app alive instead of
+        // hard-crashing (e.g. from a tray-menu interaction). The message is also shown to the user.
+        DispatcherUnhandledException += (_, ex) =>
+        {
+            Log.Error(ex.Exception, "Unhandled UI exception");
+            MessageBox.Show(ex.Exception.Message, "AzerothCore Control — error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            ex.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) =>
+            Log.Error(ex.ExceptionObject as Exception, "Unhandled domain exception");
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, ex) =>
+        {
+            Log.Error(ex.Exception, "Unobserved task exception");
+            ex.SetObserved();
+        };
+
         var store = new SettingsStore(Path.Combine(appDataDir, "settings.json"));
         _coordinator = new ServerCoordinator(store, loggerFactory);
 
@@ -57,12 +74,17 @@ public partial class App : System.Windows.Application
         _trayIcon = (TaskbarIcon)FindResource("TrayIcon");
         _trayIcon.DataContext = MainViewModel;
 
+        // Start hidden in the tray only when launched at boot with --minimized (or explicitly configured);
+        // a normal launch shows the window maximized.
         var startMinimized = e.Args.Contains("--minimized") || _coordinator.Settings.StartMinimizedToTray;
 
         var window = new MainWindow { DataContext = MainViewModel };
         MainWindow = window;
         if (!startMinimized)
+        {
+            window.WindowState = WindowState.Maximized;
             window.Show();
+        }
 
         if (_coordinator.Settings.AutoStartServers)
             _ = _coordinator.StartAllAsync();
@@ -77,17 +99,6 @@ public partial class App : System.Windows.Application
             MainViewModel.Updates.AvailableAppUpdate = release);
         _coordinator.AppUpdater.StartBackgroundChecks();
     }
-
-    private void TrayOpen_Click(object sender, RoutedEventArgs e)
-    {
-        if (MainWindow == null)
-            return;
-        MainWindow.Show();
-        MainWindow.WindowState = WindowState.Normal;
-        MainWindow.Activate();
-    }
-
-    private void TrayQuit_Click(object sender, RoutedEventArgs e) => Shutdown();
 
     protected override async void OnExit(ExitEventArgs e)
     {

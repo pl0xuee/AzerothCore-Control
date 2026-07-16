@@ -46,8 +46,8 @@ public sealed class AppSettings
     /// <summary>Automatically start both servers when the app launches.</summary>
     public bool AutoStartServers { get; set; }
 
-    /// <summary>Start minimized to the system tray.</summary>
-    public bool StartMinimizedToTray { get; set; } = true;
+    /// <summary>Start minimized to the system tray instead of showing the (maximized) window on launch.</summary>
+    public bool StartMinimizedToTray { get; set; }
 }
 
 public sealed class WatchdogSettings

@@ -5,6 +5,7 @@
         xmlns:beh="clr-namespace:AzerothCoreControl.App.Behaviors"
         Title="AzerothCore Control" Height="740" Width="1060"
         MinHeight="560" MinWidth="880"
+        WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
         Icon="/Assets/appicon.ico"
         Background="{StaticResource WindowBrush}"

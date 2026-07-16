@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stopping the **world server** always performs a **safe shutdown** — it issues `.server shutdown <delay>`
   so players are warned and characters are saved before the process exits.
 - Per-server Start/Stop buttons enable/disable based on the current server state.
+- The main window now opens **maximized** on launch.
+
+### Fixed
+- **Right-clicking the system-tray icon no longer crashes** the app (tray menu now uses commands, and a
+  global exception handler logs any UI error instead of terminating).
 
 ## [0.1.0] - 2026-07-15
 
