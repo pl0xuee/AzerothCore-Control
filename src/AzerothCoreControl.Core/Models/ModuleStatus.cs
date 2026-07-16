@@ -1,5 +1,8 @@
 namespace AzerothCoreControl.Core.Models;
 
+/// <summary>A single commit that's on the remote but not yet pulled locally.</summary>
+public sealed record ModuleCommit(string ShortSha, string Summary, string Author, DateTimeOffset Date);
+
 /// <summary>Update status of a single installed AzerothCore module (a git repo under <c>modules/</c>).</summary>
 public sealed class ModuleStatus
 {
@@ -31,6 +34,9 @@ public sealed class ModuleStatus
 
     /// <summary>Tag name of the latest GitHub release, if the repo publishes releases.</summary>
     public string? LatestReleaseTag { get; init; }
+
+    /// <summary>The commits on the remote that aren't pulled yet (newest first), for showing "what changed".</summary>
+    public IReadOnlyList<ModuleCommit> IncomingCommits { get; init; } = Array.Empty<ModuleCommit>();
 
     /// <summary>Set when the status could not be computed (network/API/git error).</summary>
     public string? Error { get; init; }

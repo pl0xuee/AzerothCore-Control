@@ -4,9 +4,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2026-07-15
+## [0.1.3] - 2026-07-16
 
 ### Added
+- **Module changelog** — selecting a module now shows the commits that will be pulled ("what changed"):
+  short SHA, message, author, and date for each incoming commit.
 - **Startup-failure diagnostics** — if a server exits right after starting (e.g. the database is
   unreachable), the notification now includes the server's last output line explaining why, instead of
   silently doing nothing.
@@ -85,6 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Self-update** from this repository's GitHub Releases.
 - 33 unit tests covering the watchdog exit-code policy and config preservation.
 
-[0.1.2]: https://github.com/pl0xuee/AzerothCore-Control/releases/tag/v0.1.2
+[0.1.3]: https://github.com/pl0xuee/AzerothCore-Control/releases/tag/v0.1.3
 [0.1.1]: https://github.com/pl0xuee/AzerothCore-Control/releases/tag/v0.1.1
 [0.1.0]: https://github.com/pl0xuee/AzerothCore-Control/releases/tag/v0.1.0

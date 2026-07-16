@@ -14,6 +14,7 @@ public sealed partial class ModulesViewModel : ObservableObject
 
     [ObservableProperty] private bool _isChecking;
     [ObservableProperty] private string _status = "Not checked yet.";
+    [ObservableProperty] private ModuleRowViewModel? _selectedModule;
 
     public ObservableCollection<ModuleRowViewModel> Modules { get; } = new();
 
@@ -74,6 +75,15 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         : Model.UpdateAvailable ? $"{Model.BehindBy} behind"
         : "Up to date";
     public bool CanPull => Model.CanFastForward && !IsBusy;
+
+    public IReadOnlyList<ModuleCommit> IncomingCommits => Model.IncomingCommits;
+    public bool HasIncomingCommits => Model.IncomingCommits.Count > 0;
+
+    /// <summary>Human-readable "what changed" list of the incoming commits.</summary>
+    public string ChangesText => HasIncomingCommits
+        ? string.Join(Environment.NewLine,
+            IncomingCommits.Select(c => $"{c.ShortSha}  {c.Summary}  — {c.Author}, {c.Date:yyyy-MM-dd}"))
+        : Model.UpdateAvailable ? "(commit details unavailable)" : "Up to date — nothing to pull.";
 
     [RelayCommand]
     private void Pull()

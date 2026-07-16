@@ -13,6 +13,7 @@
         UseLayoutRounding="True">
     <Window.Resources>
         <conv:StateToBrushConverter x:Key="StateToBrush" />
+        <conv:NullToVisibilityConverter x:Key="NullToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </Window.Resources>
 
@@ -165,7 +166,40 @@
                         </StackPanel>
                     </Border>
 
-                    <DataGrid ItemsSource="{Binding Modules}" CanUserAddRows="False" IsReadOnly="True">
+                    <!-- Selected module's incoming commits ("what changed"). -->
+                    <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Margin="0,10,0,0"
+                            Height="180"
+                            Visibility="{Binding SelectedModule, Converter={StaticResource NullToVis}}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" FontWeight="SemiBold" Margin="0,0,0,6">
+                                <Run Text="What changed in " /><Run Text="{Binding SelectedModule.Name, Mode=OneWay}" /><Run Text=" (not yet pulled)" />
+                            </TextBlock>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SelectedModule.IncomingCommits}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding ShortSha}" FontFamily="Cascadia Mono, Consolas"
+                                                           Foreground="{StaticResource GoldBrush}" Margin="0,0,10,0" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" FontSize="11">
+                                                    <Run Text="{Binding Author, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, StringFormat=yyyy-MM-dd, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <DataGrid ItemsSource="{Binding Modules}" SelectedItem="{Binding SelectedModule}"
+                              CanUserAddRows="False" IsReadOnly="True">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="2*" />
                             <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="*" />

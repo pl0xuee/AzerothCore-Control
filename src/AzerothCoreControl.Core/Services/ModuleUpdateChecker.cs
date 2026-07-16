@@ -76,6 +76,7 @@ public sealed partial class ModuleUpdateChecker
             string? remoteSha = null;
             string? latestRelease = null;
             int behind = 0, ahead = 0;
+            IReadOnlyList<ModuleCommit> incoming = Array.Empty<ModuleCommit>();
 
             if (owner != null && repoName != null)
             {
@@ -102,11 +103,22 @@ public sealed partial class ModuleUpdateChecker
 
                 if (localSha != null && remoteSha != null && localSha != remoteSha)
                 {
-                    // Ask GitHub how the two commits relate (ahead/behind counts).
+                    // Ask GitHub how the two commits relate (ahead/behind counts + the incoming commits).
                     var comparison = await github.Repository.Commit
                         .Compare(owner, repoName, localSha, remoteSha).ConfigureAwait(false);
                     behind = comparison.AheadBy;   // commits on remote not in local == how far we're behind
                     ahead = comparison.BehindBy;   // commits on local not on remote
+
+                    // comparison.Commits are the commits in remote that aren't local (oldest first) —
+                    // reverse to newest-first for display.
+                    incoming = comparison.Commits
+                        .Reverse()
+                        .Select(c => new ModuleCommit(
+                            c.Sha.Length >= 7 ? c.Sha[..7] : c.Sha,
+                            FirstLine(c.Commit.Message),
+                            c.Commit.Author?.Name ?? c.Author?.Login ?? "unknown",
+                            c.Commit.Author?.Date ?? c.Commit.Committer?.Date ?? default))
+                        .ToList();
                 }
             }
 
@@ -124,6 +136,7 @@ public sealed partial class ModuleUpdateChecker
                 AheadBy = ahead,
                 HasLocalChanges = status.IsDirty,
                 LatestReleaseTag = latestRelease,
+                IncomingCommits = incoming,
             };
         }
         catch (Exception ex) when (ex is RateLimitExceededException or ApiException or LibGit2SharpException)
@@ -159,6 +172,15 @@ public sealed partial class ModuleUpdateChecker
     }
 
     private static string? Short(string? sha) => sha is { Length: >= 7 } ? sha[..7] : sha;
+
+    /// <summary>First line of a commit message, trimmed.</summary>
+    private static string FirstLine(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return "(no message)";
+        var idx = message.IndexOfAny(new[] { '\r', '\n' });
+        return (idx >= 0 ? message[..idx] : message).Trim();
+    }
 
     [GeneratedRegex(@"github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?/?$", RegexOptions.IgnoreCase)]
     private static partial Regex GitHubUrlRegex();
