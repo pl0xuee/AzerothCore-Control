@@ -47,6 +47,24 @@ public class AcoreConfigReaderTests : IDisposable
     }
 
     [Fact]
+    public void Detect_FindsConf_InSiblingEtcFolder()
+    {
+        // AzerothCore's Windows layout: binaries in dist/bin, configs in dist/etc.
+        var bin = Directory.CreateDirectory(Path.Combine(_dir, "bin")).FullName;
+        var etc = Directory.CreateDirectory(Path.Combine(_dir, "etc")).FullName;
+        File.WriteAllText(Path.Combine(etc, "worldserver.conf"), """
+            # LoginDatabaseInfo = "127.0.0.1;3306;acore;acore;acore_auth"
+            LoginDatabaseInfo     = "127.0.0.1;3306;acore;pw;wotlk_auth"
+            WorldDatabaseInfo     = "127.0.0.1;3306;acore;pw;wotlk_world"
+            CharacterDatabaseInfo = "127.0.0.1;3306;acore;pw;wotlk_chars"
+            """);
+
+        var result = AcoreConfigReader.Detect(bin);
+
+        Assert.Equal(new[] { "wotlk_auth", "wotlk_chars", "wotlk_world" }, result.Databases.Order());
+    }
+
+    [Fact]
     public void Detect_ReturnsEmpty_WhenNoConfigPresent()
         => Assert.False(AcoreConfigReader.Detect(_dir).Found);
 }

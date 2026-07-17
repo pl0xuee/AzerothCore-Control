@@ -19,6 +19,9 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _busyMessage = "";
     [ObservableProperty] private bool _isBusy;
 
+    /// <summary>Running app version for the status bar. The source-revision suffix (+gitsha) is dropped.</summary>
+    public string AppVersion => "v" + GitHubReleaseService.CurrentAppVersion.Split('+')[0];
+
     public ServerStatusViewModel World { get; }
     public ServerStatusViewModel Auth { get; }
     public ConsoleViewModel Console { get; }

@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-07-16
+
+### Added
+- **App version in the status bar** — the running version is shown in the bottom-left corner, read from the
+  assembly rather than hardcoded, so it always matches the build.
+
+### Fixed
+- **Database names are now detected from the real config.** Detection only looked inside the run directory
+  (where `worldserver.exe` lives), missing AzerothCore's Windows layout that keeps configs in a sibling
+  folder (`env/dist/bin/` vs `env/dist/etc/`). Nothing was found, so the settings screen silently fell back
+  to the built-in `acore_auth`/`acore_characters`/`acore_world` defaults while claiming they came from your
+  `worldserver.conf`. The run directory's `etc/` and `configs/` subfolders — and the same three relative to
+  its parent — are now searched as well, and auto-detect reports when no config was found instead of
+  staying quiet.
+
 ## [0.1.4] - 2026-07-16
 
 ### Added

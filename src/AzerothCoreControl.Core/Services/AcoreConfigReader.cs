@@ -40,9 +40,10 @@ public static class AcoreConfigReader
         var infos = new List<AcoreDbInfo>();
         // Only the user's real .conf files — NEVER the .conf.dist templates, which hold placeholder
         // credentials/database names rather than the actual configured database.
+        foreach (var dir in ConfigDirectories(runDirectory))
         foreach (var confName in new[] { "worldserver.conf", "authserver.conf" })
         {
-            var path = Path.Combine(runDirectory, confName);
+            var path = Path.Combine(dir, confName);
             if (!File.Exists(path))
                 continue;
             foreach (var key in DbKeys)
@@ -71,6 +72,33 @@ public static class AcoreConfigReader
             Password = first.Password,
             Databases = databases,
         };
+    }
+
+    /// <summary>
+    /// Directories that may hold the .conf, nearest-first. The run directory is where worldserver.exe
+    /// lives, but AzerothCore's Windows layout keeps configs beside the binaries rather than with them
+    /// (<c>env/dist/bin/worldserver.exe</c> vs <c>env/dist/etc/worldserver.conf</c>), so the sibling and
+    /// child "etc"/"configs" folders have to be searched too.
+    /// </summary>
+    private static IEnumerable<string> ConfigDirectories(string runDirectory)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var roots = new List<string> { runDirectory };
+        try
+        {
+            var parent = Directory.GetParent(runDirectory)?.FullName;
+            if (parent != null)
+                roots.Add(parent);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+
+        foreach (var root in roots)
+        foreach (var sub in new[] { "", "etc", "configs" })
+        {
+            var dir = sub.Length == 0 ? root : Path.Combine(root, sub);
+            if (seen.Add(dir) && Directory.Exists(dir))
+                yield return dir;
+        }
     }
 
     /// <summary>Parse a single <c>Key = "host;port;user;pass;db"</c> line from a conf file.</summary>

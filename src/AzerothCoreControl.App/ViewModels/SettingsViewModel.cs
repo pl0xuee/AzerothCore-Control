@@ -134,6 +134,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             DetectedDatabases = string.Join(", ", db.Databases);
             messages.Add($"Databases: {DetectedDatabases}");
         }
+        else
+        {
+            messages.Add("No worldserver.conf/authserver.conf found — using default database names.");
+        }
 
         // Default the backup folder next to the server if not set.
         if (string.IsNullOrWhiteSpace(BackupDirectory) && !string.IsNullOrWhiteSpace(RunDirectory))

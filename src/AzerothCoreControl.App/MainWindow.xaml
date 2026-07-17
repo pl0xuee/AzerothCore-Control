@@ -33,7 +33,11 @@
         <!-- ===== Status bar ===== -->
         <Border DockPanel.Dock="Bottom" Background="{StaticResource WindowBrush}" Padding="14,6"
                 BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,1,0,0">
-            <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource TextSecondaryBrush}" />
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding AppVersion}" Margin="0,0,12,0"
+                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource TextSecondaryBrush}" />
+            </DockPanel>
         </Border>
 
         <TabControl Margin="0">
@@ -348,7 +352,7 @@
                         <TextBlock Text="MySQL service name (e.g. MySQL80)" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding MySqlServiceName}" Margin="0,0,0,8" />
 
-                        <TextBlock Text="Detected databases (from your worldserver.conf)" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="Databases (auto-detected from worldserver.conf; defaults shown until detected)" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding DetectedDatabases}" IsReadOnly="True" Margin="0,0,0,8"
                                  Foreground="{StaticResource TextSecondaryBrush}" />
 
