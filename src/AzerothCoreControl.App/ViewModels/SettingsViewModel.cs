@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.IO;
+using AzerothCoreControl.Core.Models;
 using AzerothCoreControl.Core.Services;
 using AzerothCoreControl.App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -28,6 +30,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _launchOnBoot;
     [ObservableProperty] private string _detectedDatabases = "";
     [ObservableProperty] private string _saveResult = "";
+    [ObservableProperty] private ModuleRepoOverride? _selectedOverride;
+
+    /// <summary>
+    /// Modules pinned to a specific repo. The catalogue guesses by folder name, which lands on the popular
+    /// upstream — wrong for anyone deliberately running a fork.
+    /// </summary>
+    public ObservableCollection<ModuleRepoOverride> ModuleRepoOverrides { get; } = new();
 
     public SettingsViewModel(ServerCoordinator coordinator)
     {
@@ -53,6 +62,22 @@ public sealed partial class SettingsViewModel : ObservableObject
         AutoStartServers = s.AutoStartServers;
         LaunchOnBoot = s.LaunchOnBoot;
         DetectedDatabases = string.Join(", ", s.MySql.Databases);
+
+        // Copy, so cancelling out of Settings without saving doesn't mutate live settings.
+        ModuleRepoOverrides.Clear();
+        foreach (var o in s.ModuleRepoOverrides)
+            ModuleRepoOverrides.Add(new ModuleRepoOverride { Module = o.Module, Repository = o.Repository });
+    }
+
+    [RelayCommand]
+    private void AddModuleRepoOverride()
+        => ModuleRepoOverrides.Add(new ModuleRepoOverride { Module = "", Repository = "" });
+
+    [RelayCommand]
+    private void RemoveModuleRepoOverride()
+    {
+        if (SelectedOverride != null)
+            ModuleRepoOverrides.Remove(SelectedOverride);
     }
 
     // ---- Browse buttons -------------------------------------------------
@@ -130,10 +155,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void AutoDetect()
     {
-        var detected = PathDetector.Detect(RunDirectory ?? SourceDirectory);
-        RunDirectory ??= detected.RunDirectory;
-        SourceDirectory ??= detected.SourceDirectory;
-        BuildDirectory ??= detected.BuildDirectory;
+        // Blank(), not ??=: a TextBox the user has cleared holds "" rather than null, and "" is not null — so
+        // ??= silently refused to fill in exactly the empty box the user pressed this button to fill.
+        var detected = PathDetector.Detect(Blank(RunDirectory) ?? Blank(SourceDirectory));
+        RunDirectory = Blank(RunDirectory) ?? detected.RunDirectory;
+        SourceDirectory = Blank(SourceDirectory) ?? detected.SourceDirectory;
+        BuildDirectory = Blank(BuildDirectory) ?? detected.BuildDirectory;
 
         var messages = new List<string>
         {
@@ -193,6 +220,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         s.Watchdog.AutoRestart = AutoRestart;
         s.AutoStartServers = AutoStartServers;
         s.LaunchOnBoot = LaunchOnBoot;
+
+        // Drop half-filled rows rather than persisting entries that can never match anything.
+        s.ModuleRepoOverrides = ModuleRepoOverrides
+            .Where(o => !string.IsNullOrWhiteSpace(o.Module) && !string.IsNullOrWhiteSpace(o.Repository))
+            .Select(o => new ModuleRepoOverride { Module = o.Module.Trim(), Repository = o.Repository.Trim() })
+            .ToList();
 
         _coordinator.SaveSettings();
 

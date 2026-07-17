@@ -270,10 +270,13 @@
                         </TabItem>
                     </TabControl>
 
+                    <!-- Horizontal scrolling stays enabled: if the columns ever outgrow the window, the
+                         buttons must remain reachable rather than being cut off at the edge. -->
                     <DataGrid ItemsSource="{Binding Modules}" SelectedItem="{Binding SelectedModule}"
-                              CanUserAddRows="False" IsReadOnly="True">
+                              CanUserAddRows="False" IsReadOnly="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="*" MinWidth="160">
+                            <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="*" MinWidth="140">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -283,7 +286,7 @@
                             </DataGridTextColumn>
 
                             <!-- Colour carries the state at a glance: red error, amber behind, muted when current. -->
-                            <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110">
+                            <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="95">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
@@ -306,10 +309,9 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTextColumn Header="Branch" Binding="{Binding Model.Branch}" Width="Auto" MinWidth="80" />
-
-                            <!-- Local/Remote are SHAs — monospace so they line up and compare by eye. -->
-                            <DataGridTextColumn Header="Local" Binding="{Binding Model.LocalCommit}" Width="Auto" MinWidth="70">
+                            <!-- Branch + both SHAs in one column. As three columns they cost ~220px plus their
+                                 cell padding, which is what pushed the Actions buttons off the grid. -->
+                            <DataGridTextColumn Header="Revision" Binding="{Binding RevisionText}" Width="Auto" MinWidth="150">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
@@ -318,19 +320,10 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Remote" Binding="{Binding Model.RemoteCommit}" Width="Auto" MinWidth="70">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
-                                        <Setter Property="FontSize" Value="12" />
-                                        <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
 
                             <!-- Where it came from. For a ZIP-installed module this is the catalogue's
                                  identification by folder name, which is the only clue available. -->
-                            <DataGridTextColumn Header="Source" Binding="{Binding SourceText}" Width="Auto" MinWidth="130">
+                            <DataGridTextColumn Header="Source" Binding="{Binding SourceText}" Width="Auto" MinWidth="110">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
@@ -340,7 +333,8 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <DataGridTemplateColumn Header="Actions" Width="Auto" MinWidth="240">
+                            <!-- No MinWidth: Auto already sizes to the buttons, and a floor can only fight it. -->
+                            <DataGridTemplateColumn Header="Actions" Width="Auto">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
@@ -361,7 +355,7 @@
                             </DataGridTemplateColumn>
 
                             <!-- Its own column, so a long build message can't shove the buttons off-screen. -->
-                            <DataGridTemplateColumn Header="Last result" Width="2*" MinWidth="140">
+                            <DataGridTemplateColumn Header="Last result" Width="*" MinWidth="120">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding ActionResult}" VerticalAlignment="Center"
@@ -622,6 +616,25 @@
                             <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBackupDirCommand}" Style="{StaticResource SubtleButton}" />
                             <TextBox Text="{Binding BackupDirectory}" />
                         </DockPanel>
+
+                        <TextBlock Text="Module repositories" Style="{StaticResource SectionHeader}" />
+
+                        <TextBlock Text="Only needed for modules installed without git. Those are identified by matching the folder name against the AzerothCore catalogue, which finds the popular upstream — so pin any fork you run deliberately, or it would be offered a re-clone of the wrong repo."
+                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="2,0,0,8" />
+
+                        <DataGrid ItemsSource="{Binding ModuleRepoOverrides}" SelectedItem="{Binding SelectedOverride}"
+                                  CanUserAddRows="False" IsReadOnly="False" Height="140" Margin="0,0,0,6">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Module folder" Binding="{Binding Module}" Width="*" />
+                                <DataGridTextColumn Header="Repository (owner/repo or URL)" Binding="{Binding Repository}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="Add" Command="{Binding AddModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
+                            <Button Content="Remove" Command="{Binding RemoveModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
+                            <TextBlock Text="e.g.  mod-challenge-modes  →  poemihai/mod-challenge-modes"
+                                       Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0" />
+                        </StackPanel>
 
                         <TextBlock Text="GitHub &amp; Notifications" Style="{StaticResource SectionHeader}" />
 

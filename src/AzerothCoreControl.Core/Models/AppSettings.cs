@@ -28,6 +28,12 @@ public sealed class AppSettings
     /// <summary>Restart/backup schedules (cron-like via simple time-of-day + weekday mask).</summary>
     public List<ScheduledJob> Schedules { get; set; } = new();
 
+    /// <summary>
+    /// Modules whose upstream repo the catalogue would guess wrong — a fork you run deliberately, or a
+    /// module the catalogue doesn't list at all. See <see cref="ModuleRepoOverride"/>.
+    /// </summary>
+    public List<ModuleRepoOverride> ModuleRepoOverrides { get; set; } = new();
+
     /// <summary>How often to poll GitHub for module updates.</summary>
     public TimeSpan ModuleCheckInterval { get; set; } = TimeSpan.FromHours(6);
 
@@ -114,6 +120,22 @@ public sealed class BuildSettings
 
     /// <summary>Parallel build job count (0 = let the tool decide).</summary>
     public int Parallelism { get; set; }
+}
+
+/// <summary>
+/// Pins a module folder to a specific GitHub repo, overriding the catalogue's name-based guess.
+/// </summary>
+/// <remarks>
+/// The catalogue matches on folder name, so anyone running a FORK gets the popular upstream instead — and
+/// would be offered a re-clone that replaces their fixed version with the one they deliberately left.
+/// </remarks>
+public sealed class ModuleRepoOverride
+{
+    /// <summary>The module's folder name under <c>modules/</c>, e.g. "mod-challenge-modes".</summary>
+    public string Module { get; set; } = "";
+
+    /// <summary>"owner/repo" or a full GitHub URL.</summary>
+    public string Repository { get; set; } = "";
 }
 
 public sealed class GitHubSettings

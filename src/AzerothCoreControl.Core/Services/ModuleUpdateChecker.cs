@@ -10,6 +10,12 @@ using Repository = LibGit2Sharp.Repository;
 namespace AzerothCoreControl.Core.Services;
 
 /// <summary>
+/// Where the modules folder is, and — when it isn't anywhere — what was looked at, so the message can name a
+/// path instead of shrugging.
+/// </summary>
+public sealed record ModulesFolderResult(string? Path, string Detail);
+
+/// <summary>
 /// Scans the AzerothCore <c>modules/</c> folder and reports which module git repos have updates
 /// available on their GitHub remote. Uses LibGit2Sharp for local repo state and Octokit for the
 /// remote tip / latest release.
@@ -30,16 +36,114 @@ public sealed partial class ModuleUpdateChecker
         _log = logger ?? NullLogger<ModuleUpdateChecker>.Instance;
     }
 
-    /// <summary>Absolute path to the modules folder, or null if the source dir isn't configured/doesn't have one.</summary>
-    public string? ModulesFolder
+    /// <summary>Absolute path to the modules folder, or null if it couldn't be located.</summary>
+    public string? ModulesFolder => FindModulesFolder().Path;
+
+    /// <summary>
+    /// Locate the modules folder, and explain the outcome either way.
+    /// </summary>
+    /// <remarks>
+    /// The old version only ever tried <c>&lt;SourceDirectory&gt;/modules</c> and, when that missed, said
+    /// "No modules folder found" without naming the path it looked at — leaving no way to tell a wrong
+    /// setting from a broken app. It now also handles the two ways the Source directory is commonly off by
+    /// one: pointed straight at <c>modules/</c>, or at a parent of the source tree.
+    /// </remarks>
+    public ModulesFolderResult FindModulesFolder()
     {
-        get
+        var s = _settings();
+        var src = s.SourceDirectory;
+
+        // No source directory configured — but the run directory usually lives INSIDE the source tree
+        // (env/dist/bin/worldserver.exe), so modules/ is one of its ancestors. Recovering it beats telling
+        // someone to go and type a path the app can work out for itself.
+        if (string.IsNullOrWhiteSpace(src))
         {
-            var src = _settings().SourceDirectory;
-            if (string.IsNullOrWhiteSpace(src)) return null;
-            var path = Path.Combine(src, "modules");
-            return Directory.Exists(path) ? path : null;
+            if (FindModulesAbove(s.RunDirectory ?? s.DeployDirectory) is { } recovered)
+                return new ModulesFolderResult(recovered, $"{recovered}  (found from the Run directory; set the Source directory in Settings to make this explicit)");
+
+            return new ModulesFolderResult(null,
+                "The Source directory isn't set. Set it in Settings to your AzerothCore source folder — the one containing modules/.");
         }
+
+        if (!Directory.Exists(src))
+            return new ModulesFolderResult(null, $"The Source directory doesn't exist: {src}");
+
+        // The normal case.
+        var direct = Path.Combine(src, "modules");
+        if (Directory.Exists(direct))
+            return new ModulesFolderResult(direct, direct);
+
+        // Pointed straight at modules/ itself.
+        var leaf = Path.GetFileName(src.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.Equals(leaf, "modules", StringComparison.OrdinalIgnoreCase))
+            return new ModulesFolderResult(src, src);
+
+        // Pointed above the source tree (e.g. the folder holding azerothcore-wotlk).
+        var found = FindModulesUnder(src, maxDepth: 3)
+                    ?? FindModulesAbove(_settings().RunDirectory ?? _settings().DeployDirectory);
+        if (found != null)
+            return new ModulesFolderResult(found, $"{found}  (found near the configured paths)");
+
+        return new ModulesFolderResult(null,
+            $"No modules folder under {src}. Point the Source directory at your AzerothCore source folder — the one containing modules/.");
+    }
+
+    /// <summary>
+    /// Walk up from the run directory looking for a sibling <c>modules</c> folder. AzerothCore's Windows
+    /// layout puts the binaries at <c>&lt;source&gt;/env/dist/bin</c>, so the source root — and its
+    /// <c>modules/</c> — is a few levels above them.
+    /// </summary>
+    private static string? FindModulesAbove(string? runDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(runDirectory))
+            return null;
+
+        try
+        {
+            var dir = new DirectoryInfo(runDirectory);
+            // Bounded: bin -> dist -> env -> source root is 3, a couple spare for unusual layouts.
+            for (var i = 0; i < 6 && dir != null; i++, dir = dir.Parent)
+            {
+                var candidate = Path.Combine(dir.FullName, "modules");
+                if (Directory.Exists(candidate))
+                    return candidate;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+        }
+        return null;
+    }
+
+    /// <summary>Breadth-first hunt for a <c>modules</c> directory, bounded in depth and tolerant of ACLs.</summary>
+    private static string? FindModulesUnder(string root, int maxDepth)
+    {
+        var queue = new Queue<(string Dir, int Depth)>();
+        queue.Enqueue((root, 0));
+        while (queue.Count > 0)
+        {
+            var (dir, depth) = queue.Dequeue();
+
+            var candidate = Path.Combine(dir, "modules");
+            if (Directory.Exists(candidate))
+                return candidate;
+            if (depth >= maxDepth)
+                continue;
+
+            string[] children;
+            try
+            {
+                children = Directory.GetDirectories(dir);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+                queue.Enqueue((child, depth + 1));
+        }
+        return null;
     }
 
     /// <summary>

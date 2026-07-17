@@ -336,10 +336,12 @@
         </Setter>
     </Style>
 
-    <!-- Compact button for use inside grid rows, where the default padding/margin won't fit. -->
+    <!-- Compact button for use inside grid rows, where the default padding/margin won't fit. Kept tight
+         deliberately: a module row carries three of these, and every pixel here is a pixel the Actions
+         column has to find. -->
     <Style x:Key="GridButton" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
-        <Setter Property="Padding" Value="12,4" />
-        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Padding" Value="9,3" />
+        <Setter Property="Margin" Value="0,0,4,0" />
         <Setter Property="FontSize" Value="12" />
     </Style>
 

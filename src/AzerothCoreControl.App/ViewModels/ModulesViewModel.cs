@@ -29,9 +29,11 @@ public sealed partial class ModulesViewModel : ObservableObject
         Status = "Checking modules…";
         try
         {
-            if (_coordinator.ModuleChecker.ModulesFolder == null)
+            // Name the path that was checked: "no modules folder found" alone gives the user nothing to act on.
+            var folder = _coordinator.ModuleChecker.FindModulesFolder();
+            if (folder.Path == null)
             {
-                Status = "No modules folder found. Set the Source Directory in Settings.";
+                Status = folder.Detail;
                 return;
             }
             // Task.Run: CheckAllAsync opens each repo and walks its working tree synchronously between
@@ -54,7 +56,7 @@ public sealed partial class ModulesViewModel : ObservableObject
             var checkable = results.Count - failed;
 
             Status = results.Count == 0
-                ? $"No modules found in {_coordinator.ModuleChecker.ModulesFolder}."
+                ? $"The modules folder is empty: {folder.Path}"
                 : updates == 0
                     ? $"All {checkable} modules up to date."
                     : $"{updates} of {checkable} modules have updates available.";
@@ -95,6 +97,7 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsRecloneable))]
     [NotifyPropertyChangedFor(nameof(CanReclone))]
     [NotifyPropertyChangedFor(nameof(SourceText))]
+    [NotifyPropertyChangedFor(nameof(RevisionText))]
     [NotifyPropertyChangedFor(nameof(IncomingCommits))]
     [NotifyPropertyChangedFor(nameof(HasIncomingCommits))]
     [NotifyPropertyChangedFor(nameof(ChangesText))]
@@ -140,6 +143,25 @@ public sealed partial class ModuleRowViewModel : ObservableObject
 
     /// <summary>Status text plus, when we identified it from the catalogue, where it actually came from.</summary>
     public string? SourceText => Model.GitHubRepo;
+
+    /// <summary>
+    /// Branch and commits as one string ("master  a119a6d → 93aaea3"). These were three columns saying one
+    /// thing, and the grid didn't have the width to spare.
+    /// </summary>
+    public string RevisionText
+    {
+        get
+        {
+            if (!Model.IsGitRepo)
+                return "";
+            var branch = string.IsNullOrEmpty(Model.Branch) ? "(detached)" : Model.Branch;
+            var local = Model.LocalCommit ?? "?";
+            // Only show the arrow when the remote is actually somewhere else.
+            return Model.RemoteCommit == null || Model.RemoteCommit == local
+                ? $"{branch}  {local}"
+                : $"{branch}  {local} → {Model.RemoteCommit}";
+        }
+    }
 
     /// <summary>Re-clone is offered only for a non-git folder we could identify an upstream for.</summary>
     /// <remarks>Separate from <see cref="CanReclone"/> so the button greys out while cloning instead of

@@ -76,6 +76,76 @@ public class ModuleCatalogueResolveTests
     }
 }
 
+public class ModuleRepoOverrideTests
+{
+    private static List<ModuleRepoOverride> Overrides(string module, string repo)
+        => new() { new ModuleRepoOverride { Module = module, Repository = repo } };
+
+    [Fact]
+    public void PinsAModuleToAFork_InsteadOfTheCataloguesGuess()
+    {
+        // The real case: the catalogue resolves mod-challenge-modes to the 65-star ZhengPeiRu21 upstream,
+        // but this server runs poemihai's fixed fork — which isn't in the catalogue at all.
+        var entry = ModuleCatalogue.FindOverride(
+            Overrides("mod-challenge-modes", "poemihai/mod-challenge-modes"), "mod-challenge-modes");
+
+        Assert.NotNull(entry);
+        Assert.Equal("poemihai/mod-challenge-modes", entry!.FullName);
+        Assert.Equal("https://github.com/poemihai/mod-challenge-modes.git", entry.CloneUrl);
+    }
+
+    [Fact]
+    public void MatchingTheModuleFolderIsCaseInsensitiveAndTrimmed()
+    {
+        var entry = ModuleCatalogue.FindOverride(
+            Overrides("  Mod-Challenge-Modes  ", "poemihai/mod-challenge-modes"), "mod-challenge-modes");
+        Assert.NotNull(entry);
+    }
+
+    [Fact]
+    public void AnUnrelatedModuleIsUnaffected()
+    {
+        Assert.Null(ModuleCatalogue.FindOverride(
+            Overrides("mod-challenge-modes", "poemihai/mod-challenge-modes"), "mod-transmog"));
+    }
+
+    [Theory]
+    [InlineData("poemihai/mod-challenge-modes")]
+    [InlineData("https://github.com/poemihai/mod-challenge-modes")]
+    [InlineData("https://github.com/poemihai/mod-challenge-modes.git")]
+    [InlineData("git@github.com:poemihai/mod-challenge-modes.git")]
+    [InlineData("  poemihai/mod-challenge-modes  ")]
+    public void AcceptsTheFormsPeopleActuallyPasteIn(string spec)
+    {
+        var entry = ModuleCatalogue.FromRepoSpec("mod-challenge-modes", spec);
+
+        Assert.NotNull(entry);
+        Assert.Equal("poemihai/mod-challenge-modes", entry!.FullName);
+        Assert.Equal("https://github.com/poemihai/mod-challenge-modes.git", entry.CloneUrl);
+    }
+
+    [Fact]
+    public void TheEntryNameIsTheRepoName_NotTheFolderName()
+    {
+        // A fork may be named differently to the folder; the GitHub release lookup uses this name, so a
+        // folder name here would 404 against the wrong repo.
+        var entry = ModuleCatalogue.FromRepoSpec("mod-foo", "someone/mod-foo-fixed");
+        Assert.Equal("mod-foo-fixed", entry!.Name);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-a-repo")]
+    [InlineData("too/many/parts")]
+    [InlineData("https://example.com/whatever")]
+    public void ATypoDegradesToUnknown_RatherThanABogusCloneUrl(string? spec)
+    {
+        // A bad override must never produce a clone URL — Re-clone would replace a module from it.
+        Assert.Null(ModuleCatalogue.FromRepoSpec("mod-foo", spec));
+    }
+}
+
 public class BuildDiagnosticsTests
 {
     [Fact]

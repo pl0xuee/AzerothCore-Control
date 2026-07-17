@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-07-17
+
+### Added
+- **Pin a module to a specific repo.** Modules installed without git are identified by matching the folder
+  name against the catalogue, which finds the *popular* upstream — wrong for anyone deliberately running a
+  fork, and it would have offered to re-clone over their fixed version with the one they left. Settings now
+  has a Module repositories list mapping a folder to a repo (`owner/repo` or a URL), which overrides the
+  guess. Git checkouts are unaffected: their `origin` is a fact and is always believed over any guess.
+
+### Fixed
+- **The module action buttons were cut off.** The grid carried eight columns whose minimum widths totalled
+  more than the window can be narrowed to, so the columns overflowed and Pull / Pull + Build / Re-clone were
+  clipped at the edge. Branch, Local and Remote — three columns saying one thing — are now a single Revision
+  column reading `master  a119a6d → 93aaea3`, the remaining widths are trimmed, and horizontal scrolling is
+  available so the buttons can never become unreachable even on a narrow window.
+- **"No modules folder found" now names the path it checked.** The old message gave no way to tell a wrong
+  setting from a broken app — including the case where the folder had simply been deleted. It now reports the
+  path, or that the Source directory is unset or missing.
+- **The modules folder is found even when the Source directory is blank or off by one.** The run directory
+  normally sits inside the source tree (`<source>/env/dist/bin`), so `modules/` is one of its ancestors and
+  can be recovered from there. A Source directory pointed straight at `modules/`, or one level above the
+  source tree, now also resolves instead of failing.
+- **"Auto-detect paths" no longer refuses to fill an empty box.** It assigned with `??=`, which only replaces
+  a null — but a text box the user has cleared holds an empty string, so the one button meant to repair a
+  blank path did nothing to it.
+
 ## [0.1.11] - 2026-07-17
 
 ### Fixed

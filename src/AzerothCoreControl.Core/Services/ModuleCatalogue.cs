@@ -94,16 +94,71 @@ public sealed class ModuleCatalogue
     }
 
     /// <summary>
-    /// Find the catalogue entry for a module directory name (e.g. "mod-transmog"). Matching is by repo name,
-    /// which is what makes this work without any git metadata.
+    /// Find the entry for a module directory name (e.g. "mod-transmog"). A configured override wins outright;
+    /// otherwise this matches the catalogue by repo name, which is what makes it work without git metadata.
     /// </summary>
     public async Task<CatalogueEntry?> ResolveAsync(string folderName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(folderName))
             return null;
 
+        // An override is the user telling us which repo this actually is. It beats a name guess every time,
+        // and it must not need a network round-trip to be honoured.
+        if (FindOverride(_settings().ModuleRepoOverrides, folderName) is { } pinned)
+            return pinned;
+
         var all = await GetAllAsync(cancellationToken).ConfigureAwait(false);
         return Resolve(all, folderName);
+    }
+
+    /// <summary>The override for <paramref name="folderName"/> as an entry, or null if there isn't a usable one.</summary>
+    internal static CatalogueEntry? FindOverride(IEnumerable<ModuleRepoOverride>? overrides, string folderName)
+    {
+        var match = overrides?.FirstOrDefault(o =>
+            string.Equals(o.Module?.Trim(), folderName, StringComparison.OrdinalIgnoreCase));
+        return match == null ? null : FromRepoSpec(folderName, match.Repository);
+    }
+
+    /// <summary>
+    /// Turn "owner/repo" or a GitHub URL into an entry. Returns null for anything unparseable, so a typo in
+    /// settings degrades to "we don't know where this came from" rather than a bogus clone URL.
+    /// </summary>
+    internal static CatalogueEntry? FromRepoSpec(string folderName, string? spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec))
+            return null;
+
+        var text = spec.Trim();
+        string owner, repo;
+
+        if (text.Contains("://", StringComparison.Ordinal) || text.Contains("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var (parsedOwner, parsedRepo) = ModuleUpdateChecker.ParseGitHubUrl(text);
+            if (parsedOwner == null || parsedRepo == null)
+                return null;
+            owner = parsedOwner;
+            repo = parsedRepo;
+        }
+        else
+        {
+            // Bare "owner/repo".
+            var parts = text.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+                return null;
+            owner = parts[0];
+            repo = parts[1].EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? parts[1][..^4] : parts[1];
+        }
+
+        var fullName = $"{owner}/{repo}";
+        // Name is the REPO name, not the folder name — callers use it for the GitHub release lookup, and an
+        // override may legitimately point a folder at a differently-named repo (a fork with a suffix).
+        return new CatalogueEntry(
+            Name: repo,
+            FullName: fullName,
+            CloneUrl: $"https://github.com/{fullName}.git",
+            Description: null,
+            Stars: 0,
+            Archived: false);
     }
 
     /// <summary>
