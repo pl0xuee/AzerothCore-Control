@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-07-16
+
+### Fixed
+- **Module config files are now read** — detection only opened `worldserver.conf` and `authserver.conf`, but
+  modules ship their own config into a `modules` subfolder (mod-playerbots puts `PlayerbotsDatabaseInfo` in
+  `etc/modules/playerbots.conf`), so a module's database was still missed even though any `*DatabaseInfo`
+  key is matched. Every `.conf` in a `modules` subfolder of each searched config directory is now read;
+  `.conf.dist` templates remain ignored.
+
 ## [0.1.6] - 2026-07-16
 
 ### Fixed

@@ -39,15 +39,8 @@ public static class AcoreConfigReader
             return new AcoreDbDetection();
 
         var infos = new List<AcoreDbInfo>();
-        // Only the user's real .conf files — NEVER the .conf.dist templates, which hold placeholder
-        // credentials/database names rather than the actual configured database.
-        foreach (var dir in ConfigDirectories(runDirectory))
-        foreach (var confName in new[] { "worldserver.conf", "authserver.conf" })
-        {
-            var path = Path.Combine(dir, confName);
-            if (File.Exists(path))
-                infos.AddRange(ReadAllDatabaseInfos(path));
-        }
+        foreach (var path in ConfigFiles(runDirectory))
+            infos.AddRange(ReadAllDatabaseInfos(path));
 
         if (infos.Count == 0)
             return new AcoreDbDetection();
@@ -67,6 +60,47 @@ public static class AcoreConfigReader
             Password = first.Password,
             Databases = databases,
         };
+    }
+
+    /// <summary>
+    /// Every config file worth reading: core server configs plus module configs, which live in a
+    /// <c>modules</c> subfolder and hold their own connection strings (mod-playerbots ships
+    /// <c>playerbots.conf</c> with <c>PlayerbotsDatabaseInfo</c> there rather than in worldserver.conf).
+    /// Only real <c>.conf</c> files — NEVER the <c>.conf.dist</c> templates, which hold placeholder
+    /// credentials and database names rather than the actual configured database.
+    /// </summary>
+    private static IEnumerable<string> ConfigFiles(string runDirectory)
+    {
+        foreach (var dir in ConfigDirectories(runDirectory))
+        {
+            foreach (var confName in new[] { "worldserver.conf", "authserver.conf" })
+            {
+                var path = Path.Combine(dir, confName);
+                if (File.Exists(path))
+                    yield return path;
+            }
+
+            var modulesDir = Path.Combine(dir, "modules");
+            if (!Directory.Exists(modulesDir))
+                continue;
+
+            string[] moduleConfigs;
+            try
+            {
+                moduleConfigs = Directory.GetFiles(modulesDir, "*.conf");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            // Filter on the real extension: on Windows a "*.conf" pattern can also match "*.conf.dist".
+            foreach (var path in moduleConfigs)
+            {
+                if (Path.GetExtension(path).Equals(".conf", StringComparison.OrdinalIgnoreCase))
+                    yield return path;
+            }
+        }
     }
 
     /// <summary>

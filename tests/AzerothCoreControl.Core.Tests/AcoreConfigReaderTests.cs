@@ -65,6 +65,37 @@ public class AcoreConfigReaderTests : IDisposable
     }
 
     [Fact]
+    public void Detect_FindsModuleDatabase_InModulesSubfolder()
+    {
+        // Real mod-playerbots layout: core DBs in etc/worldserver.conf, the module's own DB in
+        // etc/modules/playerbots.conf — a file the core-config scan never opens.
+        var bin = Directory.CreateDirectory(Path.Combine(_dir, "bin")).FullName;
+        var etc = Directory.CreateDirectory(Path.Combine(_dir, "etc")).FullName;
+        var modules = Directory.CreateDirectory(Path.Combine(etc, "modules")).FullName;
+
+        File.WriteAllText(Path.Combine(etc, "worldserver.conf"), """
+            LoginDatabaseInfo     = "127.0.0.1;3306;acore;pw;acore_wotlk_auth"
+            WorldDatabaseInfo     = "127.0.0.1;3306;acore;pw;acore_wotlk_world"
+            CharacterDatabaseInfo = "127.0.0.1;3306;acore;pw;acore_wotlk_characters"
+            """);
+        File.WriteAllText(Path.Combine(modules, "playerbots.conf"), """
+            # PlayerbotsDatabaseInfo = "127.0.0.1;3306;acore;acore;acore_playerbots"
+            PlayerbotsDatabaseInfo = "127.0.0.1;3306;acore;pw;acore_wotlk_playerbots"
+            AiPlayerbot.Enabled = 1
+            """);
+        // The .dist template must stay ignored even inside modules/.
+        File.WriteAllText(Path.Combine(modules, "othermod.conf.dist"), """
+            OtherDatabaseInfo = "127.0.0.1;3306;root;placeholder;should_not_appear"
+            """);
+
+        var result = AcoreConfigReader.Detect(bin);
+
+        Assert.Equal(
+            new[] { "acore_wotlk_auth", "acore_wotlk_characters", "acore_wotlk_playerbots", "acore_wotlk_world" },
+            result.Databases.Order());
+    }
+
+    [Fact]
     public void Detect_FindsConf_InSiblingEtcFolder()
     {
         // AzerothCore's Windows layout: binaries in dist/bin, configs in dist/etc.
