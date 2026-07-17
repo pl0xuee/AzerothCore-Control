@@ -30,7 +30,9 @@ public sealed class ServerCoordinator : IAsyncDisposable
 
         Notifications = new NotificationService(accessor, logger: loggerFactory.CreateLogger<NotificationService>());
         MySql = new MySqlMonitor(accessor, loggerFactory.CreateLogger<MySqlMonitor>());
-        ModuleChecker = new ModuleUpdateChecker(accessor, loggerFactory.CreateLogger<ModuleUpdateChecker>());
+        Catalogue = new ModuleCatalogue(accessor, logger: loggerFactory.CreateLogger<ModuleCatalogue>());
+        ConfigEditor = new ConfigEditService(accessor, loggerFactory.CreateLogger<ConfigEditService>());
+        ModuleChecker = new ModuleUpdateChecker(accessor, Catalogue, loggerFactory.CreateLogger<ModuleUpdateChecker>());
         ModuleUpdater = new ModuleUpdater(accessor, loggerFactory.CreateLogger<ModuleUpdater>());
         Releases = new GitHubReleaseService(accessor, logger: loggerFactory.CreateLogger<GitHubReleaseService>());
         Backup = new BackupService(accessor, logger: loggerFactory.CreateLogger<BackupService>());
@@ -58,6 +60,12 @@ public sealed class ServerCoordinator : IAsyncDisposable
     public ServerProcessSupervisor Auth { get; }
     public NotificationService Notifications { get; }
     public MySqlMonitor MySql { get; }
+    /// <summary>The AzerothCore module catalogue (a GitHub topic search), used to identify non-git modules.</summary>
+    public ModuleCatalogue Catalogue { get; }
+
+    /// <summary>Reads/writes the server's .conf files for the Configs tab.</summary>
+    public ConfigEditService ConfigEditor { get; }
+
     public ModuleUpdateChecker ModuleChecker { get; }
     public ModuleUpdater ModuleUpdater { get; }
     public GitHubReleaseService Releases { get; }

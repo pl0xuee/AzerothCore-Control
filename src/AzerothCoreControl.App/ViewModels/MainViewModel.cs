@@ -26,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject
     public ServerStatusViewModel Auth { get; }
     public ConsoleViewModel Console { get; }
     public ModulesViewModel Modules { get; }
+    public ConfigsViewModel Configs { get; }
     public UpdatesViewModel Updates { get; }
     public SettingsViewModel Settings { get; }
     public SchedulesViewModel Schedules { get; }
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject
         Auth = new ServerStatusViewModel(coordinator.Auth, coordinator);
         Console = new ConsoleViewModel(coordinator);
         Modules = new ModulesViewModel(coordinator);
+        Configs = new ConfigsViewModel(coordinator);
         Updates = new UpdatesViewModel(coordinator);
         Settings = new SettingsViewModel(coordinator);
         Schedules = new SchedulesViewModel(coordinator);

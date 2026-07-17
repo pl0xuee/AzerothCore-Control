@@ -21,12 +21,24 @@ public sealed partial class ServerConsoleViewModel : ObservableObject
     private readonly DispatcherTimer _flushTimer;
 
     [ObservableProperty] private string _commandInput = "";
+
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
     [ObservableProperty] private int _lineCount;
+
+    /// <summary>Drives the "nothing here yet" hint — a blank pane that explains nothing is a support ticket.</summary>
+    public bool IsEmpty => LineCount == 0;
 
     public string Title { get; }
 
     /// <summary>Only worldserver has an interactive console; authserver ignores stdin.</summary>
     public bool SupportsInput { get; }
+
+    /// <summary>
+    /// Shown while this console has produced nothing. authserver only writes to stdout if its conf enables
+    /// the Console appender, so an empty pane there usually means configuration, not a broken app — say so
+    /// instead of showing a blank box.
+    /// </summary>
+    public string EmptyHint { get; }
 
     public ObservableCollection<ConsoleLine> Output { get; } = new();
 
@@ -35,8 +47,18 @@ public sealed partial class ServerConsoleViewModel : ObservableObject
         _supervisor = supervisor;
         Title = supervisor.Kind.DisplayName();
         SupportsInput = supervisor.Kind == ServerKind.World;
+        EmptyHint = supervisor.Kind == ServerKind.Auth
+            ? "No output yet.\nStart the server to see its output here. If Auth Server is running but stays "
+              + "silent, authserver.conf is most likely logging to Auth.log only — add Console to Logger.root "
+              + "(e.g. Logger.root=2,Console Auth) to see it here."
+            : "No output yet.\nStart the server to see its output here.";
 
         _supervisor.OutputLine += (_, line) => Enqueue(ConsoleLine.FromServer(line));
+
+        // Lifecycle events belong in the console too. authserver is near-silent on stdout unless its conf
+        // enables the Console appender, so without these its pane can sit empty even while the server is up
+        // and healthy — indistinguishable from the app being broken.
+        _supervisor.Notable += e => Enqueue(new ConsoleLine(DateTime.Now, e.Message, ConsoleSeverity.System));
 
         // DispatcherTimer defaults to DispatcherPriority.Background, which sits BELOW Input — during a
         // startup firehose the dispatcher is saturated with layout and the flush tick gets starved, so the

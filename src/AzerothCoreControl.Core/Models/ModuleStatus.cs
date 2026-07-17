@@ -20,8 +20,20 @@ public sealed class ModuleStatus
     /// <summary>Short SHA of the remote tip for the tracked branch.</summary>
     public string? RemoteCommit { get; init; }
 
-    /// <summary>GitHub "owner/repo" resolved from the origin remote, if it is a GitHub repo.</summary>
+    /// <summary>GitHub "owner/repo" — from the origin remote, or from the catalogue when there's no git repo.</summary>
     public string? GitHubRepo { get; init; }
+
+    /// <summary>False when the folder has no git checkout (e.g. installed by unzipping a download).</summary>
+    public bool IsGitRepo { get; init; } = true;
+
+    /// <summary>
+    /// Set when <see cref="GitHubRepo"/> came from the AzerothCore catalogue (matched on folder name) rather
+    /// than from a git remote — i.e. it's an educated identification, not a fact recorded by the install.
+    /// </summary>
+    public bool IdentifiedFromCatalogue { get; init; }
+
+    /// <summary>Clone URL for re-installing this module properly with git. Null if unknown.</summary>
+    public string? CloneUrl { get; init; }
 
     /// <summary>How many commits the local branch is behind the remote. 0 = up to date.</summary>
     public int BehindBy { get; init; }

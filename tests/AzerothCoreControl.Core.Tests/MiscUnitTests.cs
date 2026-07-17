@@ -16,6 +16,66 @@ public class ExitCodePolicyTests
         => Assert.Equal(expected, ExitCodePolicy.Classify(code));
 }
 
+public class ModuleCatalogueResolveTests
+{
+    private static CatalogueEntry Entry(string name, string fullName, int stars = 0, bool archived = false)
+        => new(name, fullName, $"https://github.com/{fullName}.git", null, stars, archived);
+
+    [Fact]
+    public void MatchesAFolderNameToItsRepo()
+    {
+        var all = new[] { Entry("mod-transmog", "azerothcore/mod-transmog"), Entry("mod-ah-bot", "azerothcore/mod-ah-bot") };
+        Assert.Equal("azerothcore/mod-transmog", ModuleCatalogue.Resolve(all, "mod-transmog")?.FullName);
+    }
+
+    [Fact]
+    public void MatchIsCaseInsensitive()
+    {
+        var all = new[] { Entry("mod-transmog", "azerothcore/mod-transmog") };
+        Assert.NotNull(ModuleCatalogue.Resolve(all, "Mod-Transmog"));
+    }
+
+    [Fact]
+    public void PrefersTheMostStarredWhenForksShareTheName()
+    {
+        // Forks carry the catalogue topic too, so a name legitimately matches several repos. The canonical
+        // upstream is the popular one — cloning someone's stale fork would be worse than doing nothing.
+        var all = new[]
+        {
+            Entry("mod-transmog", "randomuser/mod-transmog", stars: 3),
+            Entry("mod-transmog", "azerothcore/mod-transmog", stars: 400),
+        };
+        Assert.Equal("azerothcore/mod-transmog", ModuleCatalogue.Resolve(all, "mod-transmog")?.FullName);
+    }
+
+    [Fact]
+    public void PrefersAMaintainedRepoOverAnArchivedOne()
+    {
+        var all = new[]
+        {
+            Entry("mod-transmog", "old/mod-transmog", stars: 900, archived: true),
+            Entry("mod-transmog", "azerothcore/mod-transmog", stars: 400),
+        };
+        Assert.Equal("azerothcore/mod-transmog", ModuleCatalogue.Resolve(all, "mod-transmog")?.FullName);
+    }
+
+    [Fact]
+    public void NoMatchIsNull()
+    {
+        var all = new[] { Entry("mod-transmog", "azerothcore/mod-transmog") };
+        Assert.Null(ModuleCatalogue.Resolve(all, "mod-something-homemade"));
+        Assert.Null(ModuleCatalogue.Resolve(all, ""));
+    }
+
+    [Fact]
+    public void DoesNotMatchOnAPartialName()
+    {
+        // "mod-playerbots" must not resolve to "mod-playerbots-characters".
+        var all = new[] { Entry("mod-playerbots-characters", "deseven/mod-playerbots-characters") };
+        Assert.Null(ModuleCatalogue.Resolve(all, "mod-playerbots"));
+    }
+}
+
 public class BuildDiagnosticsTests
 {
     [Fact]

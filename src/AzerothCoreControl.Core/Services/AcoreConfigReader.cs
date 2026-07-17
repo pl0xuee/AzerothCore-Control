@@ -69,6 +69,72 @@ public static class AcoreConfigReader
     /// Only real <c>.conf</c> files — NEVER the <c>.conf.dist</c> templates, which hold placeholder
     /// credentials and database names rather than the actual configured database.
     /// </summary>
+    /// <summary>
+    /// Public view of <see cref="ConfigFiles"/>: the .conf files belonging to this install, deduplicated and
+    /// ordered core-first. Shared by the config editor and the backup so they can never disagree about which
+    /// files are "the config".
+    /// </summary>
+    public static IReadOnlyList<string> FindConfigFiles(string? runDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(runDirectory) || !Directory.Exists(runDirectory))
+            return Array.Empty<string>();
+
+        try
+        {
+            return ConfigFiles(runDirectory)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(p => Path.GetFileName(p).StartsWith("worldserver", StringComparison.OrdinalIgnoreCase) ? 0
+                            : Path.GetFileName(p).StartsWith("authserver", StringComparison.OrdinalIgnoreCase) ? 1
+                            : 2)
+                .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// The install's dedicated config FOLDER (the <c>etc</c>/<c>configs</c> directory holding
+    /// worldserver.conf), or null when the .conf files sit loose beside the binaries.
+    /// </summary>
+    /// <remarks>
+    /// Null matters: callers that copy this folder wholesale (the backup) must not be handed the run
+    /// directory itself, or they'd drag in the entire server install — binaries, maps, the lot.
+    /// </remarks>
+    public static string? FindConfigDirectory(string? runDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(runDirectory))
+            return null;
+
+        var files = FindConfigFiles(runDirectory);
+        var core =
+            files.FirstOrDefault(f => Path.GetFileName(f).Equals("worldserver.conf", StringComparison.OrdinalIgnoreCase)) ??
+            files.FirstOrDefault(f => Path.GetFileName(f).Equals("authserver.conf", StringComparison.OrdinalIgnoreCase));
+        if (core == null)
+            return null;
+
+        var dir = Path.GetDirectoryName(core);
+        if (string.IsNullOrEmpty(dir))
+            return null;
+
+        try
+        {
+            return SamePath(dir, runDirectory) ? null : dir;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(
+            Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+
     private static IEnumerable<string> ConfigFiles(string runDirectory)
     {
         foreach (var dir in ConfigDirectories(runDirectory))

@@ -154,6 +154,13 @@ public sealed class BackupSettings
 
     /// <summary>Take a backup automatically before applying updates.</summary>
     public bool BackupBeforeUpdate { get; set; } = true;
+
+    /// <summary>
+    /// Include the server's .conf files in the archive. On by default: they're tiny next to a world dump,
+    /// they're the part a deploy can't restore for you, and a database restored without the config it was
+    /// running under is only half a recovery.
+    /// </summary>
+    public bool IncludeConfigs { get; set; } = true;
 }
 
 public enum ScheduledJobKind

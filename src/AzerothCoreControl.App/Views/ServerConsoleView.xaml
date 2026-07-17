@@ -36,6 +36,7 @@
             </TextBox>
         </DockPanel>
 
+        <Grid>
         <!-- ScrollUnit=Pixel: rows wrap to different heights, and by default a ListBox scrolls in whole-item
              units, which makes the scrollbar jump a full row at a time and the "is the user at the bottom?"
              maths ambiguous. Pixel scrolling also makes ScrollToEnd land exactly at the last line. -->
@@ -67,5 +68,14 @@
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
+
+            <!-- An empty console should say why it's empty rather than looking broken. -->
+            <TextBlock Text="{Binding EmptyHint}" IsHitTestVisible="False"
+                       Foreground="{StaticResource TextMutedBrush}" FontSize="12"
+                       TextWrapping="Wrap" MaxWidth="520"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}" />
+        </Grid>
     </DockPanel>
 </UserControl>

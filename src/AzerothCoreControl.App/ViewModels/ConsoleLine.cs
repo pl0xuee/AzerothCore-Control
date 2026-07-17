@@ -7,6 +7,9 @@ public enum ConsoleSeverity
     Warning,
     Error,
     Command,
+
+    /// <summary>Not from the server: this app reporting a lifecycle event (started, crashed, restarting).</summary>
+    System,
 }
 
 /// <summary>One rendered console row: when it arrived, what it said, and how loud it was.</summary>

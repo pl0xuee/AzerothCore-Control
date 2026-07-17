@@ -10,13 +10,11 @@ namespace AzerothCoreControl.App.Behaviors;
 /// the bottom re-arms it.
 /// </summary>
 /// <remarks>
-/// This drives off the ScrollViewer's own <see cref="ScrollViewer.ScrollChanged"/> rather than the
-/// collection's CollectionChanged, because that event fires as part of the layout pass that grew the extent.
-/// The previous version queued a scroll at <c>DispatcherPriority.Background</c> — below Input and Render —
-/// so during a startup firehose (thousands of lines) the dispatcher was busy laying out and the scroll was
-/// deferred exactly when it most needed to keep up. It also compared VerticalOffset against a 48 "pixel"
-/// slack, but a ListBox scrolls logically: those units are ITEMS, so "near the bottom" silently meant
-/// "within 48 rows", and reading history a few lines up still snapped you to the end.
+/// Driven by the ScrollViewer's own <see cref="ScrollViewer.ScrollChanged"/> rather than the collection's
+/// CollectionChanged, because that event fires as part of the layout pass that grew the extent — it cannot
+/// fall behind. A previous version queued a scroll at <c>DispatcherPriority.Background</c> (below Input), so
+/// a startup firehose starved it exactly when it needed to keep up, and it measured "near the bottom" with a
+/// 48-"pixel" slack against a ListBox that scrolls in ITEM units.
 /// </remarks>
 public static class AutoScrollBehavior
 {
@@ -26,10 +24,10 @@ public static class AutoScrollBehavior
     // Per-list: is the view currently pinned to the bottom? Starts pinned.
     private static readonly ConditionalWeakTable<ListBox, StrongBox<bool>> Pinned = new();
 
-    // Per-list: already hooked. A TabControl unloads the content of an unselected tab and reloads it on
-    // reselection, so Loaded fires again on the same ListBox — without this, every visit to the Console tab
-    // would add another ScrollChanged handler to the same ScrollViewer.
-    private static readonly ConditionalWeakTable<ListBox, StrongBox<bool>> Attached = new();
+    // Per-list: the ScrollViewer we hooked. A TabControl unloads an unselected tab's content and reloads it
+    // on reselection, so Loaded fires repeatedly on the same ListBox; without this we'd stack duplicate
+    // handlers, and if the template were ever re-applied we'd be left holding a dead ScrollViewer.
+    private static readonly ConditionalWeakTable<ListBox, ScrollViewer> Hooked = new();
 
     // Per-list: a LayoutUpdated retry hook is already pending (see RetryWhenRealized).
     private static readonly ConditionalWeakTable<ListBox, StrongBox<bool>> Retrying = new();
@@ -48,57 +46,62 @@ public static class AutoScrollBehavior
             return;
 
         // The ScrollViewer lives in the control template, so it doesn't exist until the template is applied.
+        list.Loaded += OnLoaded;
         if (list.IsLoaded)
             Attach(list);
-        else
-            list.Loaded += OnLoaded;
     }
 
-    private static void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        var list = (ListBox)sender;
-        list.Loaded -= OnLoaded;
-        Attach(list);
-    }
+    private static void OnLoaded(object sender, RoutedEventArgs e) => Attach((ListBox)sender);
 
     private static void Attach(ListBox list)
     {
-        var attached = Attached.GetValue(list, _ => new StrongBox<bool>(false));
-        if (attached.Value)
-        {
-            // Re-shown after a tab switch: already hooked, just catch up to whatever arrived while hidden.
-            if (Pinned.GetValue(list, _ => new StrongBox<bool>(true)).Value)
-                FindScrollViewer(list)?.ScrollToEnd();
-            return;
-        }
-
         if (FindScrollViewer(list) is not { } scrollViewer)
         {
             // No ScrollViewer yet: a Collapsed element (or one with a Collapsed ancestor) is skipped by
-            // layout, so its template is never applied and it has no visual children. The build-report log
-            // is exactly this — hidden until a build fails. Bailing here would be permanent, so wait for the
-            // layout pass that realizes it. LayoutUpdated is chatty, hence unhooking on the first success.
+            // layout, so its template is never applied and it has no visual children. The build-report log is
+            // exactly this — hidden until a build fails. Bailing permanently would leave it unscrolled, so
+            // wait for the layout pass that realizes it.
             RetryWhenRealized(list);
             return;
         }
-        attached.Value = true;
 
         var pinned = Pinned.GetValue(list, _ => new StrongBox<bool>(true));
-        scrollViewer.ScrollChanged += (_, args) =>
-        {
-            // ExtentHeightChange == 0 means this scroll came from the user (wheel, drag, keyboard) rather
-            // than from content arriving — that's the only time their intent should re-arm or release the pin.
-            if (args.ExtentHeightChange == 0)
-            {
-                pinned.Value = scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - BottomEpsilon;
-                return;
-            }
 
+        // Same ScrollViewer as last time (the common tab-switch case): don't hook twice, just catch up on
+        // whatever arrived while this tab was hidden.
+        if (Hooked.TryGetValue(list, out var existing) && ReferenceEquals(existing, scrollViewer))
+        {
             if (pinned.Value)
                 scrollViewer.ScrollToEnd();
-        };
+            return;
+        }
 
+        Hooked.Remove(list);
+        Hooked.Add(list, scrollViewer);
+
+        scrollViewer.ScrollChanged += (_, args) => OnScrollChanged(scrollViewer, args, pinned);
         scrollViewer.ScrollToEnd();
+    }
+
+    private static void OnScrollChanged(ScrollViewer scrollViewer, ScrollChangedEventArgs args, StrongBox<bool> pinned)
+    {
+        // Only an unchanged extent AND an unchanged viewport mean the user themselves moved the view — that's
+        // the sole signal allowed to release the pin.
+        //
+        // Checking the extent alone is not enough: re-showing this tab (or resizing the window) re-measures
+        // the list and fires ScrollChanged with the extent unchanged but the viewport growing from 0, while
+        // VerticalOffset still reads 0. That looks identical to "the user scrolled to the top", which
+        // silently un-pinned the console for good — new lines kept arriving below the fold and it appeared
+        // to have stopped the moment you switched tabs and came back.
+        if (args.ExtentHeightChange == 0 && args.ViewportHeightChange == 0)
+        {
+            pinned.Value = scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - BottomEpsilon;
+            return;
+        }
+
+        // Content arrived, or the viewport changed shape — follow it if we're still pinned.
+        if (pinned.Value)
+            scrollViewer.ScrollToEnd();
     }
 
     /// <summary>Keep looking for the ScrollViewer on each layout pass until the list is actually realized.</summary>

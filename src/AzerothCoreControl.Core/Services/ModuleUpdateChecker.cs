@@ -17,11 +17,16 @@ namespace AzerothCoreControl.Core.Services;
 public sealed partial class ModuleUpdateChecker
 {
     private readonly Func<AppSettings> _settings;
+    private readonly ModuleCatalogue _catalogue;
     private readonly ILogger _log;
 
-    public ModuleUpdateChecker(Func<AppSettings> settings, ILogger<ModuleUpdateChecker>? logger = null)
+    public ModuleUpdateChecker(
+        Func<AppSettings> settings,
+        ModuleCatalogue? catalogue = null,
+        ILogger<ModuleUpdateChecker>? logger = null)
     {
         _settings = settings;
+        _catalogue = catalogue ?? new ModuleCatalogue(settings);
         _log = logger ?? NullLogger<ModuleUpdateChecker>.Instance;
     }
 
@@ -81,17 +86,11 @@ public sealed partial class ModuleUpdateChecker
         var name = Path.GetFileName(modulePath);
         github ??= CreateGitHubClient();
 
-        // Listed but not a git repo — almost always a module installed from a ZIP download. Say so plainly:
-        // update checking needs git history to compare against the remote.
+        // Listed but not a git repo — almost always a module installed from a ZIP download. There's no remote
+        // to read, but the catalogue is a GitHub topic search whose repo names match module folder names, so
+        // we can still identify where it came from and offer to re-clone it properly.
         if (!Repository.IsValid(modulePath))
-        {
-            return new ModuleStatus
-            {
-                Name = name,
-                Path = modulePath,
-                Error = "not a git repository — installed from a ZIP? Re-clone it with git to enable update checks",
-            };
-        }
+            return await DescribeNonGitModuleAsync(name, modulePath, github, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -172,6 +171,74 @@ public sealed partial class ModuleUpdateChecker
             _log.LogWarning(ex, "Failed to check module {Name}", name);
             return new ModuleStatus { Name = name, Path = modulePath, Error = ex.Message };
         }
+    }
+
+    /// <summary>
+    /// Describe a module folder that isn't a git checkout, identifying it via the catalogue where possible.
+    /// It can't be update-checked (there's no local commit to compare), but naming its upstream and latest
+    /// release turns a dead end into something actionable.
+    /// </summary>
+    private async Task<ModuleStatus> DescribeNonGitModuleAsync(
+        string name, string modulePath, GitHubClient github, CancellationToken cancellationToken)
+    {
+        CatalogueEntry? entry = null;
+        try
+        {
+            entry = await _catalogue.ResolveAsync(name, cancellationToken).ConfigureAwait(false);
+        }
+        // Octokit implements its request timeout with a linked CancellationTokenSource, so a slow GitHub
+        // surfaces as TaskCanceledException — NOT ApiException. Only a cancellation the CALLER asked for
+        // should propagate; anything else is just a failed lookup and must not sink the whole check.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Catalogue lookup failed for {Name}", name);
+        }
+
+        if (entry == null)
+        {
+            return new ModuleStatus
+            {
+                Name = name,
+                Path = modulePath,
+                IsGitRepo = false,
+                Error = "not a git repository, and no catalogue match — install it with git clone to enable update checks",
+            };
+        }
+
+        // Best-effort: the latest release is a useful "what's current upstream", but plenty of modules
+        // publish none, and its absence must not turn into an error.
+        string? latestRelease = null;
+        try
+        {
+            var owner = entry.FullName.Split('/')[0];
+            var release = await github.Repository.Release.GetLatest(owner, entry.Name).ConfigureAwait(false);
+            latestRelease = release?.TagName;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // No releases, rate-limited, offline, or a request timeout (which Octokit raises as
+            // TaskCanceledException, not ApiException) — the identification below still stands either way.
+        }
+
+        return new ModuleStatus
+        {
+            Name = name,
+            Path = modulePath,
+            IsGitRepo = false,
+            IdentifiedFromCatalogue = true,
+            GitHubRepo = entry.FullName,
+            CloneUrl = entry.CloneUrl,
+            LatestReleaseTag = latestRelease,
+            Error = "not a git repository — re-clone it to enable update checks",
+        };
     }
 
     private GitHubClient CreateGitHubClient()

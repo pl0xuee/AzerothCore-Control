@@ -34,7 +34,10 @@ public sealed partial class ModulesViewModel : ObservableObject
                 Status = "No modules folder found. Set the Source Directory in Settings.";
                 return;
             }
-            var results = await _coordinator.ModuleChecker.CheckAllAsync().ConfigureAwait(true);
+            // Task.Run: CheckAllAsync opens each repo and walks its working tree synchronously between
+            // awaits, which on a big install (mod-playerbots alone is thousands of files) would freeze the
+            // window for the duration of the check.
+            var results = await Task.Run(() => _coordinator.ModuleChecker.CheckAllAsync()).ConfigureAwait(true);
 
             // Re-checking rebuilds every row, which would throw away a build report the user hasn't read yet.
             var previous = Modules.ToDictionary(r => r.Model.Path, StringComparer.OrdinalIgnoreCase);
@@ -82,12 +85,26 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     /// </summary>
     private const int MaxLogLines = 400;
 
+    // Model IS reassigned (after a re-clone re-checks the row), so every computed property over it must be
+    // notified — otherwise the row would keep showing "not a git repository" for a folder that is now a
+    // proper checkout.
+    [NotifyPropertyChangedFor(nameof(Name))]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    [NotifyPropertyChangedFor(nameof(CanPull))]
+    [NotifyPropertyChangedFor(nameof(IsRecloneable))]
+    [NotifyPropertyChangedFor(nameof(CanReclone))]
+    [NotifyPropertyChangedFor(nameof(SourceText))]
+    [NotifyPropertyChangedFor(nameof(IncomingCommits))]
+    [NotifyPropertyChangedFor(nameof(HasIncomingCommits))]
+    [NotifyPropertyChangedFor(nameof(ChangesText))]
     [ObservableProperty] private ModuleStatus _model;
 
-    // CanPull is a computed getter over IsBusy; without this the Pull button's IsEnabled never re-evaluates
-    // and stays clickable throughout a multi-minute build, letting a git pull run against the source tree
-    // the compiler is reading.
+    // CanPull/CanReclone are computed getters over IsBusy; without this their buttons' IsEnabled never
+    // re-evaluates and they stay clickable throughout a multi-minute build, letting a git pull run against
+    // the source tree the compiler is reading.
     [NotifyPropertyChangedFor(nameof(CanPull))]
+    [NotifyPropertyChangedFor(nameof(CanReclone))]
     [ObservableProperty] private bool _isBusy;
 
     [ObservableProperty] private string? _actionResult;
@@ -121,6 +138,16 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     public bool HasError => Model.Error != null;
     public bool CanPull => Model.CanFastForward && !IsBusy;
 
+    /// <summary>Status text plus, when we identified it from the catalogue, where it actually came from.</summary>
+    public string? SourceText => Model.GitHubRepo;
+
+    /// <summary>Re-clone is offered only for a non-git folder we could identify an upstream for.</summary>
+    /// <remarks>Separate from <see cref="CanReclone"/> so the button greys out while cloning instead of
+    /// disappearing out from under the click that started it.</remarks>
+    public bool IsRecloneable => !Model.IsGitRepo && Model.CloneUrl != null;
+
+    public bool CanReclone => IsRecloneable && !IsBusy;
+
     public IReadOnlyList<ModuleCommit> IncomingCommits => Model.IncomingCommits;
     public bool HasIncomingCommits => Model.IncomingCommits.Count > 0;
 
@@ -138,6 +165,68 @@ public sealed partial class ModuleRowViewModel : ObservableObject
             var result = _coordinator.ModuleUpdater.Pull(Model.Path);
             return (result.Success, result.Message);
         });
+    }
+
+    /// <summary>
+    /// Replace a ZIP-installed folder with a real git clone so it becomes update-checkable. This moves the
+    /// user's existing folder aside, so it asks first — and says exactly what it will do.
+    /// </summary>
+    [RelayCommand]
+    private async Task RecloneAsync()
+    {
+        var cloneUrl = Model.CloneUrl;
+        if (cloneUrl == null || !CanReclone)
+            return;
+
+        var answer = System.Windows.MessageBox.Show(
+            $"Replace {Name} with a fresh git clone of {Model.GitHubRepo}?\n\n" +
+            $"Your current folder will be moved aside (kept as {Name}.backup-<time>), not deleted, and the " +
+            "latest code cloned in its place.\n\n" +
+            "This brings in the newest upstream code, so rebuild afterwards. Any local edits you made will " +
+            "be in the backup folder only.",
+            "Re-clone module",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (answer != System.Windows.MessageBoxResult.Yes)
+            return;
+
+        IsBusy = true;
+        ActionFailed = false;
+        ActionResult = "Cloning…";
+        try
+        {
+            // Cloning is a long network operation — keep it off the UI thread.
+            var result = await Task.Run(() => _coordinator.ModuleUpdater.Reclone(Model.Path, cloneUrl)).ConfigureAwait(true);
+            ActionResult = result.Message;
+            ActionFailed = !result.Success;
+
+            if (result.Success)
+            {
+                // It's a real checkout now — re-read it so the row stops calling itself a ZIP install.
+                // Task.Run because CheckOneAsync does its git work (RetrieveStatus over every file in a fresh
+                // clone) synchronously before its first await, which would freeze the window right after the
+                // clone we were careful to keep off the UI thread.
+                try
+                {
+                    var path = Model.Path;
+                    Model = await Task.Run(() => _coordinator.ModuleChecker.CheckOneAsync(path)).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    // The clone worked; failing to re-read it is cosmetic — a re-check will pick it up.
+                    Serilog.Log.Warning(ex, "Re-check after re-clone failed for {Module}", Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ActionResult = "Failed: " + ex.Message;
+            ActionFailed = true;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]

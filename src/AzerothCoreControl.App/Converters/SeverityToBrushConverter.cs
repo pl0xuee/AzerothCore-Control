@@ -12,12 +12,14 @@ public sealed class SeverityToBrushConverter : IValueConverter
     private static readonly SolidColorBrush Warning = Frozen("#FFE9B85A");
     private static readonly SolidColorBrush Error = Frozen("#FFFF6F60");
     private static readonly SolidColorBrush Command = Frozen("#FF5FD98B");
+    private static readonly SolidColorBrush System = Frozen("#FF8FB4D9");
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value switch
     {
         ConsoleSeverity.Warning => Warning,
         ConsoleSeverity.Error => Error,
         ConsoleSeverity.Command => Command,
+        ConsoleSeverity.System => System,
         _ => Info,
     };
 

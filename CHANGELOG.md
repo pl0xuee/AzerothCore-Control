@@ -4,6 +4,45 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-07-17
+
+### Fixed
+- **The console stopped following new lines after leaving and re-entering its tab** (a regression introduced
+  in 0.1.10). Auto-scroll released its pin whenever a scroll arrived with the extent unchanged, treating that
+  as "the user scrolled away" — but re-showing a tab re-measures the list and fires exactly that, with the
+  offset still at 0, so returning to the Console tab looked like a deliberate scroll to the top and unpinned
+  it for good. Output kept arriving below the fold, so the console appeared frozen. Releasing the pin now
+  additionally requires the viewport to be unchanged; a viewport change re-pins to the newest line.
+
+### Added
+- **A Configs tab.** Edit the server's .conf files in the app: core configs and module ones, listed with
+  their folder so same-named files are distinguishable, in a monospace editor. Every save keeps a timestamped
+  `.bak` of the previous contents beside the file, writes no BOM (which can make AzerothCore's parser choke
+  on the first setting), and passes the text through verbatim — comments, blank lines, and CRLF included.
+  `.conf.dist` templates are deliberately not offered: editing one changes nothing the server reads.
+- **Backups now include the config folder.** The whole config folder from the run directory goes into the
+  archive under `config/`, `modules/` subfolder and all — a database restored without the config it was
+  running under is only half a recovery. Where the .conf files sit loose beside the binaries there is no such
+  folder, so only the .conf files are taken (copying the run directory would sweep in the entire install).
+  Can be turned off in settings.
+- **Modules installed from a ZIP are now identified via the AzerothCore catalogue.** The catalogue is a
+  GitHub topic search (`azerothcore-module`) whose repo names match module folder names, so a module with no
+  git checkout can still be traced to its upstream. Those rows now show the real repo in a new Source column
+  and the latest release tag, rather than a dead-end "not a git repository".
+- **Re-clone.** A module identified this way can be replaced with a proper git checkout in one click, which
+  is what enables update checking for it. The existing folder is moved aside as `<name>.backup-<timestamp>`
+  and never deleted — it may hold local edits — and if the clone fails the original is put back. It confirms
+  first, and notes that a rebuild is needed since re-cloning brings in the newest upstream code.
+- **An empty console now explains itself** instead of showing a blank box, and both consoles carry server
+  lifecycle events ("Auth Server started."). authserver only writes to stdout when its conf enables the
+  Console appender, so its pane could sit empty while the server was perfectly healthy — indistinguishable
+  from a broken app. The hint names the `Logger.root` setting responsible.
+
+### Changed
+- **The window title bar is dark**, matching the app rather than sitting on it as a strip of light OS chrome.
+  On Windows 11 the caption, border, and text are painted in the app's own gunmetal; on Windows 10 it falls
+  back to the standard dark caption.
+
 ## [0.1.10] - 2026-07-16
 
 ### Fixed

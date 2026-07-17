@@ -17,6 +17,7 @@
         <conv:StateToBrushConverter x:Key="StateToBrush" />
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
         <conv:InverseBoolConverter x:Key="InverseBool" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </Window.Resources>
 
@@ -327,7 +328,19 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
-                            <DataGridTemplateColumn Header="Actions" Width="Auto" MinWidth="200">
+                            <!-- Where it came from. For a ZIP-installed module this is the catalogue's
+                                 identification by folder name, which is the only clue available. -->
+                            <DataGridTextColumn Header="Source" Binding="{Binding SourceText}" Width="Auto" MinWidth="130">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Setter Property="FontSize" Value="12" />
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTemplateColumn Header="Actions" Width="Auto" MinWidth="240">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
@@ -336,6 +349,12 @@
                                             <Button Content="Pull + Build" Command="{Binding PullAndBuildCommand}"
                                                     IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
                                                     Style="{StaticResource GridButton}" />
+                                            <!-- Only for a ZIP install we could identify: turns it into a real
+                                                 checkout so update checks start working. -->
+                                            <Button Content="Re-clone" Command="{Binding RecloneCommand}"
+                                                    IsEnabled="{Binding CanReclone}"
+                                                    Style="{StaticResource GridButton}"
+                                                    Visibility="{Binding IsRecloneable, Converter={StaticResource BoolToVis}}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -368,6 +387,76 @@
                             </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- ===== Configs (.conf editor) ===== -->
+            <TabItem Header="Configs" DataContext="{Binding Configs}">
+                <DockPanel Margin="12">
+                    <!-- Action bar. The restart note matters: the server reads .conf only at boot, so a save
+                         alone changes nothing on a running realm. -->
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                        <Button DockPanel.Dock="Right" Content="Save" Command="{Binding SaveCommand}"
+                                IsEnabled="{Binding IsDirty}" Style="{StaticResource AccentButton}" Margin="4,0,0,0" />
+                        <Button DockPanel.Dock="Right" Content="Revert" Command="{Binding RevertCommand}"
+                                IsEnabled="{Binding IsDirty}" Style="{StaticResource SubtleButton}" Margin="4,0,0,0" />
+                        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="11"
+                                   TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </DockPanel>
+
+                    <!-- File list -->
+                    <Border DockPanel.Dock="Left" Width="230" Margin="0,0,10,0"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+                        <DockPanel Margin="8">
+                            <DockPanel DockPanel.Dock="Top" Margin="2,0,2,8">
+                                <Button DockPanel.Dock="Right" Content="Rescan" Command="{Binding RefreshCommand}"
+                                        Style="{StaticResource GridButton}" Margin="0" />
+                                <TextBlock Text="Config files" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </DockPanel>
+                            <ListBox ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" ToolTipService.InitialShowDelay="400">
+                                            <TextBlock.ToolTip>
+                                                <ToolTip Style="{StaticResource DarkToolTip}" Content="{Binding Path}" />
+                                            </TextBlock.ToolTip>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Editor -->
+                    <Grid>
+                        <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                 IsEnabled="{Binding HasSelection}"
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                 AcceptsReturn="True" AcceptsTab="True"
+                                 TextWrapping="NoWrap"
+                                 VerticalContentAlignment="Top"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 Background="{StaticResource ConsoleBackgroundBrush}" />
+                        <TextBlock Text="Select a config file to edit." IsHitTestVisible="False"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}" />
+                    </Grid>
                 </DockPanel>
             </TabItem>
 
