@@ -196,10 +196,13 @@ public class AcoreLogLocatorTests : IDisposable
     [Fact]
     public void HonoursAnAbsoluteLogsDir()
     {
+        // The path goes in verbatim: AzerothCore's config reader does not unescape backslashes, so a Windows
+        // user writes C:\Logs, not C:\\Logs. (Escaping it here passed on Linux — no backslashes to double —
+        // and failed on Windows, which is what the release build caught.)
         var logs = Path.Combine(_root, "logs");
         Directory.CreateDirectory(logs);
         WriteAuthConf($"""
-            LogsDir = "{logs.Replace(@"\", @"\\")}"
+            LogsDir = "{logs}"
             Appender.Auth=2,5,0,Auth.log,w
             Logger.root=4,Console Auth
             """);
