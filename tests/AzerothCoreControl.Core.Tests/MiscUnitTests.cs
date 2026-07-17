@@ -16,6 +16,53 @@ public class ExitCodePolicyTests
         => Assert.Equal(expected, ExitCodePolicy.Classify(code));
 }
 
+public class ResolveCMakeGuiTests
+{
+    [Fact]
+    public void PrefersExplicitPath()
+    {
+        var build = new BuildSettings { CMakePath = "cmake", CMakeGuiPath = @"D:\tools\cmake-gui.exe" };
+        Assert.Equal(@"D:\tools\cmake-gui.exe", BuildService.ResolveCMakeGui(build));
+    }
+
+    [Fact]
+    public void FallsBackToPathLookupWhenCMakeIsBare()
+    {
+        var build = new BuildSettings { CMakePath = "cmake" };
+        Assert.Equal("cmake-gui", BuildService.ResolveCMakeGui(build));
+    }
+
+    [Fact]
+    public void FallsBackToPathLookupWhenNoGuiBesideCMake()
+    {
+        // A real directory with no cmake-gui in it — the sibling probe must miss and not invent a path.
+        var dir = Path.Combine(Path.GetTempPath(), "acc-gui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var build = new BuildSettings { CMakePath = Path.Combine(dir, "cmake.exe") };
+            Assert.Equal("cmake-gui", BuildService.ResolveCMakeGui(build));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void FindsGuiBesideCMake()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "acc-gui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var guiName = OperatingSystem.IsWindows() ? "cmake-gui.exe" : "cmake-gui";
+            var gui = Path.Combine(dir, guiName);
+            File.WriteAllText(gui, "");
+            var build = new BuildSettings { CMakePath = Path.Combine(dir, "cmake.exe") };
+            Assert.Equal(gui, BuildService.ResolveCMakeGui(build));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+}
+
 public class VersionCompareTests
 {
     [Theory]

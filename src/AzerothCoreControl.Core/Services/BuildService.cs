@@ -10,11 +10,17 @@ public sealed record BuildOutcome(bool Success, int ExitCode, string? BinaryOutp
 /// <summary>
 /// Automates recompiling AzerothCore via CMake. Assumes the build directory was already configured
 /// once by the user (the normal Windows install flow); this runs an incremental
-/// <c>cmake --build &lt;buildDir&gt; --config &lt;cfg&gt; --target authserver worldserver</c>.
+/// <c>cmake --build &lt;buildDir&gt; --config RelWithDebInfo --target authserver worldserver</c>.
 /// If the build directory has no CMake cache, it runs a configure step first.
 /// </summary>
 public sealed class BuildService
 {
+    /// <summary>
+    /// The only configuration this app builds. RelWithDebInfo keeps the optimised codegen a live server
+    /// needs while still emitting the PDBs that make a crash dump readable.
+    /// </summary>
+    public const string Configuration = "RelWithDebInfo";
+
     private readonly Func<AppSettings> _settings;
     private readonly ILogger _log;
 
@@ -37,16 +43,50 @@ public sealed class BuildService
 
         Directory.CreateDirectory(buildDir);
 
+        // Optional review gate: hand the user cmake-gui and wait. This runs before the configure check
+        // below, so generating from the GUI also satisfies it — no second headless configure.
+        if (build.ReviewCMakeBeforeBuild)
+        {
+            var gui = ResolveCMakeGui(build);
+            // Without a source dir cmake-gui can still open an already-generated tree from -B alone.
+            var guiArgs = string.IsNullOrWhiteSpace(sourceDir)
+                ? $"-B \"{buildDir}\""
+                : $"-S \"{sourceDir}\" -B \"{buildDir}\"";
+            onOutputLine?.Invoke($"[review] Opening {gui} — close it to continue the build.");
+            try
+            {
+                await InteractiveProcessRunner.RunAsync(
+                    gui,
+                    guiArgs,
+                    workingDirectory: buildDir,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The user asked to review every build; quietly building unreviewed would defeat that, so
+                // stop with something actionable instead.
+                _log.LogError(ex, "Could not open cmake-gui");
+                onOutputLine?.Invoke($"[review] {ex.Message}");
+                onOutputLine?.Invoke("[review] Set the cmake-gui path in Settings, or turn off \"Review CMake settings before building\".");
+                return new BuildOutcome(false, -1, null);
+            }
+            onOutputLine?.Invoke("[review] cmake-gui closed — building.");
+        }
+
         // Configure if the build tree hasn't been generated yet.
         if (!File.Exists(Path.Combine(buildDir, "CMakeCache.txt")))
         {
             if (string.IsNullOrWhiteSpace(sourceDir))
                 throw new InvalidOperationException("Source directory is required for the initial CMake configure.");
 
-            onOutputLine?.Invoke($"[configure] cmake -S \"{sourceDir}\" -B \"{buildDir}\"");
+            // -DCMAKE_BUILD_TYPE is what single-config generators (Ninja, Makefiles) read; multi-config ones
+            // (Visual Studio) ignore it and take --config at build time instead. Set both so either lands on
+            // RelWithDebInfo.
+            var configureArgs = $"-S \"{sourceDir}\" -B \"{buildDir}\" -DCMAKE_BUILD_TYPE={Configuration}";
+            onOutputLine?.Invoke($"[configure] cmake {configureArgs}");
             var configure = await CommandRunner.RunAsync(
                 build.CMakePath,
-                $"-S \"{sourceDir}\" -B \"{buildDir}\"",
+                configureArgs,
                 workingDirectory: buildDir,
                 onOutputLine: onOutputLine,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -59,20 +99,39 @@ public sealed class BuildService
         }
 
         var parallel = build.Parallelism > 0 ? $" --parallel {build.Parallelism}" : " --parallel";
-        var args = $"--build \"{buildDir}\" --config {build.Configuration} --target authserver worldserver{parallel}";
+        var args = $"--build \"{buildDir}\" --config {Configuration} --target authserver worldserver{parallel}";
         onOutputLine?.Invoke($"[build] cmake {args}");
 
         var result = await CommandRunner.RunAsync(
             build.CMakePath, args, workingDirectory: buildDir,
             onOutputLine: onOutputLine, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var outputDir = result.Success ? LocateBinaryOutput(buildDir, build.Configuration) : null;
+        var outputDir = result.Success ? LocateBinaryOutput(buildDir, Configuration) : null;
         if (result.Success)
             _log.LogInformation("Build succeeded. Binaries at {Dir}", outputDir);
         else
             _log.LogError("Build failed with code {Code}", result.ExitCode);
 
         return new BuildOutcome(result.Success, result.ExitCode, outputDir);
+    }
+
+    /// <summary>
+    /// Locate cmake-gui: an explicit setting wins, otherwise look beside cmake itself (they ship in the same
+    /// bin folder), and fall back to bare "cmake-gui" for PATH lookup.
+    /// </summary>
+    public static string ResolveCMakeGui(BuildSettings build)
+    {
+        if (!string.IsNullOrWhiteSpace(build.CMakeGuiPath))
+            return build.CMakeGuiPath!;
+
+        var cmakeDir = Path.GetDirectoryName(build.CMakePath);
+        if (!string.IsNullOrWhiteSpace(cmakeDir))
+        {
+            var sibling = Path.Combine(cmakeDir, OperatingSystem.IsWindows() ? "cmake-gui.exe" : "cmake-gui");
+            if (File.Exists(sibling))
+                return sibling;
+        }
+        return "cmake-gui";
     }
 
     /// <summary>

@@ -64,6 +64,9 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _actionResult;
 
+    /// <summary>Drives the colour of <see cref="ActionResult"/> — a failed build shouldn't read as muted chatter.</summary>
+    [ObservableProperty] private bool _actionFailed;
+
     public ModuleRowViewModel(ModuleStatus model, ServerCoordinator coordinator)
     {
         _model = model;
@@ -74,6 +77,7 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     public string StatusText => Model.Error != null ? $"Error: {Model.Error}"
         : Model.UpdateAvailable ? $"{Model.BehindBy} behind"
         : "Up to date";
+    public bool HasError => Model.Error != null;
     public bool CanPull => Model.CanFastForward && !IsBusy;
 
     public IReadOnlyList<ModuleCommit> IncomingCommits => Model.IncomingCommits;
@@ -91,7 +95,7 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         RunAction(() =>
         {
             var result = _coordinator.ModuleUpdater.Pull(Model.Path);
-            return result.Message;
+            return (result.Success, result.Message);
         });
     }
 
@@ -99,16 +103,20 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     private async Task PullAndBuildAsync()
     {
         IsBusy = true;
+        ActionFailed = false;
         ActionResult = "Updating…";
         try
         {
+            // Progress messages are steps, not verdicts — only the final report decides success.
             var progress = new Progress<UpdateProgress>(p => ActionResult = p.Message);
             var report = await _coordinator.Orchestrator.RunAsync(Model.Path, rebuild: true, progress).ConfigureAwait(true);
             ActionResult = report.Message;
+            ActionFailed = !report.Success;
         }
         catch (Exception ex)
         {
             ActionResult = "Failed: " + ex.Message;
+            ActionFailed = true;
         }
         finally
         {
@@ -116,11 +124,21 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         }
     }
 
-    private void RunAction(Func<string> action)
+    private void RunAction(Func<(bool Success, string Message)> action)
     {
         IsBusy = true;
-        try { ActionResult = action(); }
-        catch (Exception ex) { ActionResult = "Failed: " + ex.Message; }
+        ActionFailed = false;
+        try
+        {
+            var (success, message) = action();
+            ActionResult = message;
+            ActionFailed = !success;
+        }
+        catch (Exception ex)
+        {
+            ActionResult = "Failed: " + ex.Message;
+            ActionFailed = true;
+        }
         finally { IsBusy = false; }
     }
 }

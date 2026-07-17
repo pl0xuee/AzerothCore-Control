@@ -15,6 +15,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string? _runDirectory;
     [ObservableProperty] private string? _sourceDirectory;
     [ObservableProperty] private string? _buildDirectory;
+    [ObservableProperty] private string? _cMakePath;
+    [ObservableProperty] private string? _cMakeGuiPath;
+    [ObservableProperty] private bool _reviewCMakeBeforeBuild;
     [ObservableProperty] private string? _mySqlServiceName;
     [ObservableProperty] private string? _mysqlDumpPath;
     [ObservableProperty] private string? _backupDirectory;
@@ -38,6 +41,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         RunDirectory = s.RunDirectory;
         SourceDirectory = s.SourceDirectory;
         BuildDirectory = s.BuildDirectory;
+        CMakePath = s.Build.CMakePath;
+        CMakeGuiPath = s.Build.CMakeGuiPath;
+        ReviewCMakeBeforeBuild = s.Build.ReviewCMakeBeforeBuild;
         MySqlServiceName = s.MySql.ServiceName;
         MysqlDumpPath = s.Backup.MysqlDumpPath;
         BackupDirectory = s.Backup.OutputDirectory;
@@ -66,14 +72,36 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void BrowseMysqlDump()
     {
+        var picked = PickExecutable("Locate mysqldump.exe", MysqlDumpPath);
+        if (picked != null)
+            MysqlDumpPath = picked;
+    }
+
+    [RelayCommand]
+    private void BrowseCMake()
+    {
+        var picked = PickExecutable("Locate cmake.exe", CMakePath);
+        if (picked != null)
+            CMakePath = picked;
+    }
+
+    [RelayCommand]
+    private void BrowseCMakeGui()
+    {
+        var picked = PickExecutable("Locate cmake-gui.exe", CMakeGuiPath ?? CMakePath);
+        if (picked != null)
+            CMakeGuiPath = picked;
+    }
+
+    private static string? PickExecutable(string title, string? current)
+    {
         var dialog = new OpenFileDialog
         {
-            Title = "Locate mysqldump.exe",
+            Title = title,
             Filter = "Executable (*.exe)|*.exe|All files (*.*)|*.*",
-            InitialDirectory = SafeDir(MysqlDumpPath),
+            InitialDirectory = SafeDir(current),
         };
-        if (dialog.ShowDialog() == true)
-            MysqlDumpPath = dialog.FileName;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     private static string? PickFolder(string? current)
@@ -154,6 +182,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         s.SourceDirectory = Blank(SourceDirectory);
         s.BuildDirectory = Blank(BuildDirectory);
         s.DeployDirectory = Blank(RunDirectory);
+        s.Build.CMakePath = Blank(CMakePath) ?? "cmake";
+        s.Build.CMakeGuiPath = Blank(CMakeGuiPath);
+        s.Build.ReviewCMakeBeforeBuild = ReviewCMakeBeforeBuild;
         s.MySql.ServiceName = Blank(MySqlServiceName);
         s.Backup.MysqlDumpPath = MysqlDumpPath ?? "mysqldump";
         s.Backup.OutputDirectory = Blank(BackupDirectory);

@@ -14,6 +14,7 @@
     <Window.Resources>
         <conv:StateToBrushConverter x:Key="StateToBrush" />
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
+        <conv:InverseBoolConverter x:Key="InverseBool" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </Window.Resources>
 
@@ -197,21 +198,93 @@
                     <DataGrid ItemsSource="{Binding Modules}" SelectedItem="{Binding SelectedModule}"
                               CanUserAddRows="False" IsReadOnly="True">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="2*" />
-                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="*" />
-                            <DataGridTextColumn Header="Branch" Binding="{Binding Model.Branch}" Width="*" />
-                            <DataGridTextColumn Header="Local" Binding="{Binding Model.LocalCommit}" Width="Auto" />
-                            <DataGridTextColumn Header="Remote" Binding="{Binding Model.RemoteCommit}" Width="Auto" />
-                            <DataGridTemplateColumn Header="Actions" Width="2.2*">
+                            <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="*" MinWidth="160">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Colour carries the state at a glance: red error, amber behind, muted when current. -->
+                            <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Model.UpdateAvailable}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding HasError}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Branch" Binding="{Binding Model.Branch}" Width="Auto" MinWidth="80" />
+
+                            <!-- Local/Remote are SHAs — monospace so they line up and compare by eye. -->
+                            <DataGridTextColumn Header="Local" Binding="{Binding Model.LocalCommit}" Width="Auto" MinWidth="70">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+                                        <Setter Property="FontSize" Value="12" />
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Remote" Binding="{Binding Model.RemoteCommit}" Width="Auto" MinWidth="70">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+                                        <Setter Property="FontSize" Value="12" />
+                                        <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTemplateColumn Header="Actions" Width="Auto" MinWidth="200">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
                                             <Button Content="Pull" Command="{Binding PullCommand}"
-                                                    IsEnabled="{Binding CanPull}" Style="{StaticResource SubtleButton}" />
-                                            <Button Content="Pull + Build" Command="{Binding PullAndBuildCommand}" Style="{StaticResource SubtleButton}" />
-                                            <TextBlock Text="{Binding ActionResult}" VerticalAlignment="Center"
-                                                       Margin="8,0" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                    IsEnabled="{Binding CanPull}" Style="{StaticResource GridButton}" />
+                                            <Button Content="Pull + Build" Command="{Binding PullAndBuildCommand}"
+                                                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                                                    Style="{StaticResource GridButton}" />
                                         </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Its own column, so a long build message can't shove the buttons off-screen. -->
+                            <DataGridTemplateColumn Header="Last result" Width="2*" MinWidth="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ActionResult}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding ActionResult}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ActionFailed}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource ErrorTextBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -338,6 +411,27 @@
                             <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBuildDirCommand}" Style="{StaticResource SubtleButton}" />
                             <TextBox Text="{Binding BuildDirectory}" />
                         </DockPanel>
+
+                        <TextBlock Text="Build" Style="{StaticResource SectionHeader}" />
+
+                        <TextBlock Text="Builds always use the RelWithDebInfo configuration — optimised, but with the debug symbols a crash dump needs."
+                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="2,0,0,8" />
+
+                        <TextBlock Text="cmake path" Style="{StaticResource FieldLabel}" />
+                        <DockPanel Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeCommand}" Style="{StaticResource SubtleButton}" />
+                            <TextBox Text="{Binding CMakePath}" />
+                        </DockPanel>
+
+                        <TextBlock Text="cmake-gui path (optional — found next to cmake by default)" Style="{StaticResource FieldLabel}" />
+                        <DockPanel Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeGuiCommand}" Style="{StaticResource SubtleButton}" />
+                            <TextBox Text="{Binding CMakeGuiPath}" />
+                        </DockPanel>
+
+                        <CheckBox Content="Review CMake settings before building" IsChecked="{Binding ReviewCMakeBeforeBuild}" Margin="0,4" />
+                        <TextBlock Text="Opens cmake-gui and waits for you to close it, so you can check the options (and re-generate) before the compile starts."
+                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,8" />
 
                         <TextBlock Text="MySQL &amp; Backups" Style="{StaticResource SectionHeader}" />
 

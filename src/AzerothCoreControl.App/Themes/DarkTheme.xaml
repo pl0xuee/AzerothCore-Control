@@ -33,6 +33,10 @@
     <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource GoldColor}" />
 
     <!-- Status brushes (used by StateToBrushConverter + dashboard) -->
+    <!-- Selected grid row: a green-tinted surface rather than a saturated fill, so row text stays readable. -->
+    <SolidColorBrush x:Key="RowSelectedBrush" Color="#FF26362C" />
+    <SolidColorBrush x:Key="ErrorTextBrush" Color="#FFFF6F60" />
+
     <SolidColorBrush x:Key="RunningBrush" Color="#FF2ECC71" />
     <SolidColorBrush x:Key="StoppedBrush" Color="#FF7A828C" />
     <SolidColorBrush x:Key="CrashedBrush" Color="#FFE74C3C" />
@@ -315,6 +319,13 @@
         </Setter>
     </Style>
 
+    <!-- Compact button for use inside grid rows, where the default padding/margin won't fit. -->
+    <Style x:Key="GridButton" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+        <Setter Property="Padding" Value="12,4" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
     <!-- ============================= DataGrid ============================= -->
     <Style TargetType="DataGrid">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
@@ -330,7 +341,7 @@
         <Setter Property="AutoGenerateColumns" Value="False" />
         <Setter Property="CanUserResizeRows" Value="False" />
         <Setter Property="ColumnHeaderHeight" Value="34" />
-        <Setter Property="RowHeight" Value="32" />
+        <Setter Property="RowHeight" Value="40" />
         <Setter Property="SelectionUnit" Value="FullRow" />
     </Style>
     <Style TargetType="DataGridColumnHeader">
@@ -349,6 +360,12 @@
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Background" Value="{StaticResource HoverBrush}" />
             </Trigger>
+            <!-- After IsMouseOver so selection still reads while hovered. Selection is painted here only —
+                 the cells stay transparent, otherwise the two tints stack into a glaring block. -->
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{StaticResource RowSelectedBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            </Trigger>
         </Style.Triggers>
     </Style>
     <Style TargetType="DataGridCell">
@@ -366,8 +383,9 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
+            <!-- Selection is drawn by DataGridRow; a cell tint on top of it would double up. -->
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#332ECC71" />
+                <Setter Property="Background" Value="Transparent" />
                 <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             </Trigger>
         </Style.Triggers>

@@ -15,7 +15,7 @@
     <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
     <!-- Allows building this Windows-only WPF app on the Linux dev box (build only, not run). -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-07-16
+
+### Added
+- **Review CMake settings before building** — a new Build setting (on by default) opens cmake-gui pointed at
+  your source and build directories and waits for you to close it before the compile starts, so options can
+  be checked and re-generated first. Only user-initiated builds can reach this; scheduled jobs never build,
+  so nothing can sit blocked on a dialog nobody is watching. cmake-gui is found next to your cmake by
+  default, with an optional explicit path.
+- **Build settings are editable** — the cmake and cmake-gui paths now appear in Settings; previously the
+  build config existed only in settings.json with no way to reach it from the app.
+
+### Changed
+- **Builds always use RelWithDebInfo** — the configuration was a setting defaulting to `Release`, which
+  optimises away the debug symbols a crash dump needs. It is now fixed at RelWithDebInfo and the setting is
+  gone; any `Configuration` value in your settings.json is ignored. The initial configure also passes
+  `-DCMAKE_BUILD_TYPE=RelWithDebInfo` so single-config generators (Ninja, Makefiles) land there too, not
+  just Visual Studio.
+- **Modules list is easier to read** — a selected row was painted with both the row highlight and a green
+  cell tint stacked on top of each other, which made the row glare. Selection is now drawn once, in a muted
+  green-tinted surface. Commit SHAs are monospaced, module status is coloured (amber when behind, red on
+  error), and the action result moved into its own "Last result" column so a long build message no longer
+  pushes the buttons around. A failed build now reads red instead of muted grey.
+- **Pull + Build is disabled while an update is running**, rather than being re-clickable mid-build.
+
 ## [0.1.8] - 2026-07-16
 
 ### Changed

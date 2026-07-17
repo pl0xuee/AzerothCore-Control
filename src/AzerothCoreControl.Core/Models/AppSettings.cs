@@ -100,8 +100,17 @@ public sealed class BuildSettings
     /// <summary>Path to cmake.exe (or just "cmake" if on PATH).</summary>
     public string CMakePath { get; set; } = "cmake";
 
-    /// <summary>Build configuration passed to cmake --build (Release/RelWithDebInfo/Debug).</summary>
-    public string Configuration { get; set; } = "Release";
+    /// <summary>
+    /// Path to cmake-gui.exe. Null means "find it next to <see cref="CMakePath"/>, else fall back to PATH" —
+    /// only worth setting if the GUI lives somewhere unusual.
+    /// </summary>
+    public string? CMakeGuiPath { get; set; }
+
+    /// <summary>
+    /// Open cmake-gui and wait for it to close before every build, so the CMake options can be reviewed
+    /// (and re-generated) first. Only user-initiated builds can hit this — scheduled jobs never build.
+    /// </summary>
+    public bool ReviewCMakeBeforeBuild { get; set; } = true;
 
     /// <summary>Parallel build job count (0 = let the tool decide).</summary>
     public int Parallelism { get; set; }
