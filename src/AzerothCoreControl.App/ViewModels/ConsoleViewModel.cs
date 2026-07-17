@@ -11,7 +11,7 @@ public sealed partial class ConsoleViewModel : ObservableObject
 
     public ConsoleViewModel(ServerCoordinator coordinator)
     {
-        World = new ServerConsoleViewModel(coordinator.World);
-        Auth = new ServerConsoleViewModel(coordinator.Auth);
+        World = new ServerConsoleViewModel(coordinator.World, () => coordinator.Settings);
+        Auth = new ServerConsoleViewModel(coordinator.Auth, () => coordinator.Settings);
     }
 }

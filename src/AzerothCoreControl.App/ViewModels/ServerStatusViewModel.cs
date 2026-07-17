@@ -32,6 +32,17 @@ public sealed partial class ServerStatusViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _actionMessage = "";
 
+    /// <summary>The port this server listens on, read from its .conf — the first thing you check when clients can't connect.</summary>
+    [NotifyPropertyChangedFor(nameof(EndpointText))]
+    [ObservableProperty] private int? _listenPort;
+
+    /// <summary>OS process id — for Task Manager, netstat, or a crash dump.</summary>
+    [NotifyPropertyChangedFor(nameof(PidText))]
+    [ObservableProperty] private int? _processId;
+
+    /// <summary>The last thing the supervisor reported (started, crashed + why, restarting).</summary>
+    [ObservableProperty] private string _lastEvent = "";
+
     public ServerStatusViewModel(ServerProcessSupervisor supervisor, ServerCoordinator coordinator)
     {
         _supervisor = supervisor;
@@ -43,10 +54,40 @@ public sealed partial class ServerStatusViewModel : ObservableObject
         {
             State = s;
             RestartCount = supervisor.RestartCount;
+            ProcessId = supervisor.ProcessId;
             StartServerCommand.NotifyCanExecuteChanged();
             StopServerCommand.NotifyCanExecuteChanged();
         });
+
+        // The crash diagnostic ("Crashed — FATAL: cannot connect to database") is the most useful line this
+        // app produces; it belonged in the console only, where it scrolls away.
+        supervisor.Notable += e => _dispatcher.BeginInvoke(() => LastEvent = e.Message);
+
+        RefreshConfigFacts();
     }
+
+    private DateTimeOffset _lastConfigRead;
+
+    /// <summary>
+    /// Re-read the .conf-derived facts. Called from the dashboard's per-second tick, but throttled: the run
+    /// directory can be set in Settings at any time (the first-run flow is "launch with nothing configured,
+    /// then set it"), yet re-reading a .conf every second would be pointless disk traffic.
+    /// </summary>
+    public void RefreshConfigFacts(bool force = false)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (!force && _lastConfigRead != default && now - _lastConfigRead < TimeSpan.FromSeconds(15))
+            return;
+        _lastConfigRead = now;
+
+        var s = _coordinator.Settings;
+        ListenPort = AcoreConfigReader.FindListenPort(s.RunDirectory ?? s.DeployDirectory, Kind);
+    }
+
+    public string PidText => ProcessId is { } pid ? pid.ToString() : "—";
+
+    /// <summary>e.g. "0.0.0.0:3724" — what a client actually connects to.</summary>
+    public string EndpointText => ListenPort is { } port ? $"port {port}" : "—";
 
     private bool CanStart => !IsBusy && State is ServerState.Stopped or ServerState.Crashed;
     private bool CanStop => !IsBusy && State is ServerState.Running or ServerState.Restarting;

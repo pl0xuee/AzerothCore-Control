@@ -1,3 +1,5 @@
+using AzerothCoreControl.Core.Models;
+
 namespace AzerothCoreControl.Core.Services;
 
 /// <summary>MySQL connection details parsed from an AzerothCore <c>*DatabaseInfo</c> config line.</summary>
@@ -134,6 +136,65 @@ public static class AcoreConfigReader
             Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
             Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
             StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The .conf a given server reads, or null if it isn't there.</summary>
+    public static string? FindServerConfig(string? runDirectory, ServerKind kind)
+    {
+        if (string.IsNullOrWhiteSpace(runDirectory))
+            return null;
+        var name = kind == ServerKind.Auth ? "authserver.conf" : "worldserver.conf";
+        return FindConfigFiles(runDirectory)
+            .FirstOrDefault(p => Path.GetFileName(p).Equals(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Parse <c>Key = Value</c> lines, ignoring comments. Values keep their inner commas.</summary>
+    public static Dictionary<string, string> ReadKeyValues(string confPath)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(confPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return result;
+        }
+
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+            var eq = line.IndexOf('=');
+            if (eq <= 0)
+                continue;
+
+            var key = line[..eq].Trim();
+            var value = Unquote(line[(eq + 1)..].Trim());
+            if (key.Length > 0)
+                result[key] = value;
+        }
+        return result;
+    }
+
+    /// <summary>The TCP port a server listens on, read from its .conf. Null when it can't be determined.</summary>
+    public static int? FindListenPort(string? runDirectory, ServerKind kind)
+    {
+        var conf = FindServerConfig(runDirectory, kind);
+        if (conf == null)
+            return null;
+
+        // authserver takes the realmlist connections (3724); worldserver takes the game traffic (8085).
+        var key = kind == ServerKind.Auth ? "RealmServerPort" : "WorldServerPort";
+        var values = ReadKeyValues(conf);
+        return values.TryGetValue(key, out var text) && int.TryParse(text.Trim(), out var port) ? port : null;
+    }
+
+    internal static string Unquote(string value) =>
+        value.Length >= 2 && value.StartsWith('"') && value.EndsWith('"')
+            ? value[1..^1]
+            : value;
 
     private static IEnumerable<string> ConfigFiles(string runDirectory)
     {

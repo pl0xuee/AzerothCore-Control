@@ -1,0 +1,87 @@
+<UserControl x:Class="AzerothCoreControl.App.Views.ServerCardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:AzerothCoreControl.App.Converters">
+    <UserControl.Resources>
+        <conv:StateToBrushConverter x:Key="StateToBrush" />
+
+        <!-- Label above value: the card is a scoreboard, so the value is what should catch the eye. -->
+        <Style x:Key="StatLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style x:Key="StatValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- One card, used for both servers. It was duplicated markup, so every change had to be made twice. -->
+    <Border Style="{StaticResource Card}">
+        <StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Ellipse Width="13" Height="13" VerticalAlignment="Center"
+                         Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
+                <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold" Margin="10,0" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding StatusText}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
+
+            <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
+                <Run Text="Uptime " /><Run Text="{Binding Uptime, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
+                <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
+            </TextBlock>
+
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Grid.Column="0">
+                    <TextBlock Text="CPU" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding CpuText}" Style="{StaticResource StatValue}" />
+                </StackPanel>
+                <StackPanel Grid.Row="0" Grid.Column="1">
+                    <TextBlock Text="Memory" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding MemoryText}" Style="{StaticResource StatValue}" />
+                </StackPanel>
+
+                <!-- The port is the first thing you check when clients can't connect; the PID is what you
+                     take to Task Manager or netstat. -->
+                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,10,0,0">
+                    <TextBlock Text="Listening" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding EndpointText}" Style="{StaticResource StatValue}" />
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                    <TextBlock Text="PID" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding PidText}" Style="{StaticResource StatValue}"
+                               FontFamily="Cascadia Mono, Consolas" FontSize="14" />
+                </StackPanel>
+            </Grid>
+
+            <!-- The supervisor's last word — including the crash reason, which previously only ever appeared
+                 in the console, where it scrolls away. -->
+            <TextBlock Text="{Binding LastEvent}" Margin="0,14,0,0" FontSize="11"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.ToolTip>
+                    <ToolTip Style="{StaticResource DarkToolTip}" Content="{Binding LastEvent}" />
+                </TextBlock.ToolTip>
+            </TextBlock>
+
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <Button Content="Start" Command="{Binding StartServerCommand}" Style="{StaticResource AccentButton}" />
+                <Button Content="Stop" Command="{Binding StopServerCommand}" Style="{StaticResource SubtleButton}" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding ActionMessage}" Style="{StaticResource Muted}" FontSize="11"
+                       Margin="4,6,0,0" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -50,6 +50,10 @@ public sealed partial class MainViewModel : ObservableObject
             World.RefreshResources();
             Auth.RefreshUptime();
             Auth.RefreshResources();
+            // Throttled internally — this picks up a run directory set in Settings after launch, which is
+            // the normal first-run order.
+            World.RefreshConfigFacts();
+            Auth.RefreshConfigFacts();
             MySqlState = _coordinator.MySql.GetState();
         };
         _uptimeTimer.Start();

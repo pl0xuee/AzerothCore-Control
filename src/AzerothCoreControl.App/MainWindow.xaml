@@ -52,77 +52,10 @@
                          just fit the old default width, and any narrower window wrapped the third card onto
                          a line of its own, leaving a hole. These scale with the window instead. -->
                     <UniformGrid Rows="1" Columns="3">
-                        <!-- World card -->
-                        <Border Style="{StaticResource Card}" DataContext="{Binding World}">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="13" Height="13" VerticalAlignment="Center"
-                                             Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
-                                    <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold" Margin="10,0" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding StatusText}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
-                                <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
-                                    <Run Text="Uptime " /><Run Text="{Binding Uptime, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                </TextBlock>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="CPU" Style="{StaticResource Muted}" FontSize="11" />
-                                        <TextBlock Text="{Binding CpuText}" FontSize="16" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Memory" Style="{StaticResource Muted}" FontSize="11" />
-                                        <TextBlock Text="{Binding MemoryText}" FontSize="16" />
-                                    </StackPanel>
-                                </Grid>
-                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                    <Button Content="Start" Command="{Binding StartServerCommand}" Style="{StaticResource AccentButton}" />
-                                    <Button Content="Stop" Command="{Binding StopServerCommand}" Style="{StaticResource SubtleButton}" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding ActionMessage}" Style="{StaticResource Muted}" FontSize="11"
-                                           Margin="4,6,0,0" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Auth card -->
-                        <Border Style="{StaticResource Card}" DataContext="{Binding Auth}">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="13" Height="13" VerticalAlignment="Center"
-                                             Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
-                                    <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold" Margin="10,0" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding StatusText}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
-                                <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
-                                    <Run Text="Uptime " /><Run Text="{Binding Uptime, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                    <Run Text="   ·   Restarts " /><Run Text="{Binding RestartCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
-                                </TextBlock>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="CPU" Style="{StaticResource Muted}" FontSize="11" />
-                                        <TextBlock Text="{Binding CpuText}" FontSize="16" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Memory" Style="{StaticResource Muted}" FontSize="11" />
-                                        <TextBlock Text="{Binding MemoryText}" FontSize="16" />
-                                    </StackPanel>
-                                </Grid>
-                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                    <Button Content="Start" Command="{Binding StartServerCommand}" Style="{StaticResource AccentButton}" />
-                                    <Button Content="Stop" Command="{Binding StopServerCommand}" Style="{StaticResource SubtleButton}" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding ActionMessage}" Style="{StaticResource Muted}" FontSize="11"
-                                           Margin="4,6,0,0" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                        </Border>
+                        <!-- One card control, bound per server: this was ~35 lines of identical markup
+                             duplicated, so every change had to be made twice and could drift. -->
+                        <views:ServerCardView DataContext="{Binding World}" />
+                        <views:ServerCardView DataContext="{Binding Auth}" />
 
                         <!-- MySQL card -->
                         <Border Style="{StaticResource Card}">

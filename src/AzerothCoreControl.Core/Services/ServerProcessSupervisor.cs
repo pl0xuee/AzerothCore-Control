@@ -213,6 +213,25 @@ public sealed class ServerProcessSupervisor : IDisposable
         return false;
     }
 
+    /// <summary>OS process id of the running server, or null when it isn't running — for Task Manager, netstat, dumps.</summary>
+    public int? ProcessId
+    {
+        get
+        {
+            lock (_gate)
+            {
+                try
+                {
+                    return _process is { HasExited: false } p ? p.Id : null;
+                }
+                catch (InvalidOperationException)
+                {
+                    return null; // exited between the check and the read
+                }
+            }
+        }
+    }
+
     /// <summary>Send a raw line to the process's stdin (worldserver console command).</summary>
     public void SendConsole(string command)
     {

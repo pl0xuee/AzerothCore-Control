@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-07-17
+
+### Fixed
+- **The Auth console showed no server output.** Not a config problem, and not the console pane: AzerothCore's
+  console appender never calls `fflush`, so as soon as its stdout is captured through a pipe the C runtime
+  switches to full buffering (4KB). worldserver is loud enough to keep filling that buffer; authserver emits a
+  few hundred bytes at startup and then almost nothing, so its output could sit undelivered indefinitely — the
+  pane looked broken while the server was perfectly healthy. Its FILE appender flushes every line, so the
+  consoles now follow the server's log file, whose path is read from the .conf the same way the server reads
+  it (`LogsDir`, `Logger.root`, and the appender's timestamp flag). stdout is ignored while tailing, or the
+  same lines would arrive later in 4KB gluts and duplicate everything.
+  - The earlier hint blaming `Logger.root` was wrong — the stock config enables the Console appender — and has
+    been replaced with the real explanation.
+
+### Added
+- **More on the server cards.** The **listening port**, read from the .conf rather than assumed, so a
+  non-default port shows the real number — the first thing to check when clients can't connect. The **PID**,
+  for Task Manager, netstat, or a crash dump. And the supervisor's **last event**, which is where the crash
+  reason ("Crashed — FATAL: cannot connect to database") now lives; it was previously console-only, where it
+  scrolls away.
+
+### Changed
+- The two dashboard cards are now one control used twice. They were identical markup duplicated, so every
+  change had to be made in both places and could drift.
+
 ## [0.1.12] - 2026-07-17
 
 ### Added
