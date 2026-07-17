@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2026-07-17
+
+### Added
+- **Players and bots on the World card.** How many characters are actually in the world, split into real
+  players and playerbots. Bots are identified the way mod-playerbots identifies them itself — every random bot
+  lives on an account whose name starts with `AiPlayerbot.RandomBotAccountPrefix` (default "rndbot"), read
+  from the module's own conf rather than assumed.
+  - This reads the database directly (a new MySqlConnector dependency). The world server's console could have
+    been asked instead, but its command replies go to stdout, which AzerothCore never flushes once captured —
+    an answer might arrive minutes later or never. The database is the only honest source.
+  - Accounts live in the login database and characters in the character database, so the count joins across
+    the two. That needed each connection to be read by its config KEY; the existing detection flattens every
+    `*DatabaseInfo` into one list, which is all a backup needs but can't tell auth from characters.
+  - It's read-only, throttled to once every 5 seconds, never overlapped, runs off the UI thread with a
+    5-second timeout, and shows "—" rather than failing if MySQL is down or the server is stopped. The rows
+    appear on the World card only — authserver has no characters in it.
+
 ## [0.1.14] - 2026-07-17
 
 ### Changed

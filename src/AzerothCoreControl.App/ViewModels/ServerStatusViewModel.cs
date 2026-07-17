@@ -43,6 +43,17 @@ public sealed partial class ServerStatusViewModel : ObservableObject
     /// <summary>The last thing the supervisor reported (started, crashed + why, restarting).</summary>
     [ObservableProperty] private string _lastEvent = "";
 
+    /// <summary>Who's in the world. Null when it can't be read (MySQL down, not configured, server stopped).</summary>
+    [NotifyPropertyChangedFor(nameof(PlayersText))]
+    [NotifyPropertyChangedFor(nameof(BotsText))]
+    [ObservableProperty] private WorldPopulation? _population;
+
+    /// <summary>Only the world server has a population — authserver has no characters in it.</summary>
+    public bool ShowsPopulation => Kind == ServerKind.World;
+
+    public string PlayersText => IsRunning && Population != null ? Population.Players.ToString() : "—";
+    public string BotsText => IsRunning && Population != null ? Population.Bots.ToString() : "—";
+
     public ServerStatusViewModel(ServerProcessSupervisor supervisor, ServerCoordinator coordinator)
     {
         _supervisor = supervisor;
@@ -67,6 +78,48 @@ public sealed partial class ServerStatusViewModel : ObservableObject
     }
 
     private DateTimeOffset _lastConfigRead;
+    private DateTimeOffset _lastPopulationRead;
+    private bool _populationQueryInFlight;
+
+    /// <summary>
+    /// Refresh the player/bot counts. Called from the dashboard's per-second tick but throttled to 5s, and
+    /// never overlapped: it's a round-trip to MySQL, and a slow server must not queue up queries behind it.
+    /// </summary>
+    public void RefreshPopulation()
+    {
+        if (!ShowsPopulation)
+            return;
+
+        if (!IsRunning)
+        {
+            Population = null;   // nothing is in a world that isn't running
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (_populationQueryInFlight || now - _lastPopulationRead < TimeSpan.FromSeconds(5))
+            return;
+        _lastPopulationRead = now;
+        _populationQueryInFlight = true;
+
+        // Off the UI thread: this opens a TCP connection and runs a query.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await _coordinator.Population.QueryAsync().ConfigureAwait(false);
+                _ = _dispatcher.BeginInvoke(() => Population = result);
+            }
+            catch
+            {
+                _ = _dispatcher.BeginInvoke(() => Population = null);
+            }
+            finally
+            {
+                _populationQueryInFlight = false;
+            }
+        });
+    }
 
     /// <summary>
     /// Re-read the .conf-derived facts. Called from the dashboard's per-second tick, but throttled: the run
@@ -190,6 +243,9 @@ public sealed partial class ServerStatusViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(CpuText));
         OnPropertyChanged(nameof(MemoryText));
+        // These read IsRunning too — without this the last known counts would linger on a stopped server.
+        OnPropertyChanged(nameof(PlayersText));
+        OnPropertyChanged(nameof(BotsText));
     }
 
     public string StatusText => State switch

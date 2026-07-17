@@ -4,6 +4,7 @@
              xmlns:conv="clr-namespace:AzerothCoreControl.App.Converters">
     <UserControl.Resources>
         <conv:StateToBrushConverter x:Key="StateToBrush" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Label above value: the card is a scoreboard, so the value is what should catch the eye. -->
         <Style x:Key="StatLabel" TargetType="TextBlock">
@@ -41,6 +42,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Grid.Column="0">
@@ -62,6 +64,20 @@
                     <TextBlock Text="PID" Style="{StaticResource StatLabel}" />
                     <TextBlock Text="{Binding PidText}" Style="{StaticResource StatValue}"
                                FontFamily="Cascadia Mono, Consolas" FontSize="14" />
+                </StackPanel>
+
+                <!-- Who's actually in the world. World server only — authserver has no characters in it, so
+                     these rows collapse entirely on its card rather than showing two permanent dashes. -->
+                <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,12,0,0"
+                            Visibility="{Binding ShowsPopulation, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Players" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding PlayersText}" Style="{StaticResource StatValue}" />
+                </StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,12,0,0"
+                            Visibility="{Binding ShowsPopulation, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Bots" Style="{StaticResource StatLabel}" />
+                    <TextBlock Text="{Binding BotsText}" Style="{StaticResource StatValue}"
+                               Foreground="{StaticResource AccentBrush}" />
                 </StackPanel>
             </Grid>
 

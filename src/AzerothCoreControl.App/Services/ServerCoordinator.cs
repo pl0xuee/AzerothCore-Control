@@ -32,6 +32,7 @@ public sealed class ServerCoordinator : IAsyncDisposable
         MySql = new MySqlMonitor(accessor, loggerFactory.CreateLogger<MySqlMonitor>());
         Catalogue = new ModuleCatalogue(accessor, logger: loggerFactory.CreateLogger<ModuleCatalogue>());
         ConfigEditor = new ConfigEditService(accessor, loggerFactory.CreateLogger<ConfigEditService>());
+        Population = new WorldPopulationService(accessor, loggerFactory.CreateLogger<WorldPopulationService>());
         ModuleChecker = new ModuleUpdateChecker(accessor, Catalogue, loggerFactory.CreateLogger<ModuleUpdateChecker>());
         ModuleUpdater = new ModuleUpdater(accessor, loggerFactory.CreateLogger<ModuleUpdater>());
         Releases = new GitHubReleaseService(accessor, logger: loggerFactory.CreateLogger<GitHubReleaseService>());
@@ -65,6 +66,9 @@ public sealed class ServerCoordinator : IAsyncDisposable
 
     /// <summary>Reads/writes the server's .conf files for the Configs tab.</summary>
     public ConfigEditService ConfigEditor { get; }
+
+    /// <summary>Counts who is in the world (players vs playerbots) for the World card.</summary>
+    public WorldPopulationService Population { get; }
 
     public ModuleUpdateChecker ModuleChecker { get; }
     public ModuleUpdater ModuleUpdater { get; }

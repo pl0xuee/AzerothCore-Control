@@ -137,6 +137,27 @@ public static class AcoreConfigReader
             Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
             StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The connection behind a specific key, e.g. <c>LoginDatabaseInfo</c> or <c>CharacterDatabaseInfo</c>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Detect"/> flattens every *DatabaseInfo into one list, which is all a backup needs — it
+    /// dumps them all. Anything that has to talk to a PARTICULAR database (accounts live in the login DB,
+    /// characters in the character DB) needs to know which is which, and the key is the only thing that says.
+    /// </remarks>
+    public static AcoreDbInfo? FindDatabaseInfo(string? runDirectory, string key)
+    {
+        if (string.IsNullOrWhiteSpace(runDirectory))
+            return null;
+
+        foreach (var conf in FindConfigFiles(runDirectory))
+        {
+            if (ReadKeyValues(conf).TryGetValue(key, out var value) && ParseValue(value) is { } info)
+                return info;
+        }
+        return null;
+    }
+
     /// <summary>The .conf a given server reads, or null if it isn't there.</summary>
     public static string? FindServerConfig(string? runDirectory, ServerKind kind)
     {

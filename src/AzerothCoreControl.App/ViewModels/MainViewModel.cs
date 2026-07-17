@@ -54,6 +54,7 @@ public sealed partial class MainViewModel : ObservableObject
             // the normal first-run order.
             World.RefreshConfigFacts();
             Auth.RefreshConfigFacts();
+            World.RefreshPopulation(); // throttled + non-overlapping internally; auth has no population
             MySqlState = _coordinator.MySql.GetState();
         };
         _uptimeTimer.Start();
