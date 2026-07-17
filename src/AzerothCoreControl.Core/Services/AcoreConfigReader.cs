@@ -24,12 +24,13 @@ public sealed class AcoreDbDetection
 /// </summary>
 public static class AcoreConfigReader
 {
-    private static readonly string[] DbKeys =
-    {
-        "LoginDatabaseInfo",      // acore_auth
-        "CharacterDatabaseInfo",  // acore_characters
-        "WorldDatabaseInfo",      // acore_world
-    };
+    /// <summary>
+    /// Config keys holding a connection string all end in <c>DatabaseInfo</c> — <c>LoginDatabaseInfo</c>,
+    /// <c>CharacterDatabaseInfo</c>, <c>WorldDatabaseInfo</c>, plus whatever modules add (playerbots
+    /// contributes <c>PlayerbotsDatabaseInfo</c>). Matching the suffix rather than a fixed list means a
+    /// module's database is detected without this code knowing about the module.
+    /// </summary>
+    private const string DbKeySuffix = "DatabaseInfo";
 
     /// <summary>Scan a run directory for worldserver/authserver config and extract MySQL details.</summary>
     public static AcoreDbDetection Detect(string? runDirectory)
@@ -44,14 +45,8 @@ public static class AcoreConfigReader
         foreach (var confName in new[] { "worldserver.conf", "authserver.conf" })
         {
             var path = Path.Combine(dir, confName);
-            if (!File.Exists(path))
-                continue;
-            foreach (var key in DbKeys)
-            {
-                var info = ReadDatabaseInfo(path, key);
-                if (info != null)
-                    infos.Add(info);
-            }
+            if (File.Exists(path))
+                infos.AddRange(ReadAllDatabaseInfos(path));
         }
 
         if (infos.Count == 0)
@@ -101,7 +96,29 @@ public static class AcoreConfigReader
         }
     }
 
-    /// <summary>Parse a single <c>Key = "host;port;user;pass;db"</c> line from a conf file.</summary>
+    /// <summary>Parse every <c>*DatabaseInfo = "host;port;user;pass;db"</c> line in a conf file, in file order.</summary>
+    public static IEnumerable<AcoreDbInfo> ReadAllDatabaseInfos(string confPath)
+    {
+        foreach (var raw in File.ReadLines(confPath))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+            var eq = line.IndexOf('=');
+            if (eq < 0)
+                continue;
+
+            var key = line[..eq].Trim();
+            if (!key.EndsWith(DbKeySuffix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var info = ParseValue(line[(eq + 1)..]);
+            if (info != null)
+                yield return info;
+        }
+    }
+
+    /// <summary>Parse the first <c>Key = "host;port;user;pass;db"</c> line matching <paramref name="key"/>.</summary>
     public static AcoreDbInfo? ReadDatabaseInfo(string confPath, string key)
     {
         foreach (var raw in File.ReadLines(confPath))
@@ -115,20 +132,25 @@ public static class AcoreConfigReader
             if (!string.Equals(line[..eq].Trim(), key, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var value = line[(eq + 1)..].Trim().Trim('"');
-            var parts = value.Split(';');
-            if (parts.Length < 5)
-                return null;
-
-            var host = parts[0].Trim();
-            var port = int.TryParse(parts[1].Trim(), out var p) ? p : 3306;
-            var user = parts[2].Trim();
-            var pass = parts[3];
-            var db = parts[4].Trim();
-            if (string.IsNullOrWhiteSpace(db))
-                return null;
-            return new AcoreDbInfo(host, port, user, pass, db);
+            return ParseValue(line[(eq + 1)..]);
         }
         return null;
+    }
+
+    /// <summary>Parse a <c>"host;port;user;pass;db"</c> value, or null if it isn't a connection string.</summary>
+    private static AcoreDbInfo? ParseValue(string rawValue)
+    {
+        var parts = rawValue.Trim().Trim('"').Split(';');
+        if (parts.Length < 5)
+            return null;
+
+        var host = parts[0].Trim();
+        var port = int.TryParse(parts[1].Trim(), out var p) ? p : 3306;
+        var user = parts[2].Trim();
+        var pass = parts[3];
+        var db = parts[4].Trim();
+        if (string.IsNullOrWhiteSpace(db))
+            return null;
+        return new AcoreDbInfo(host, port, user, pass, db);
     }
 }

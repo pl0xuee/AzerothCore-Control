@@ -47,6 +47,24 @@ public class AcoreConfigReaderTests : IDisposable
     }
 
     [Fact]
+    public void Detect_IncludesModuleDatabases_SuchAsPlayerbots()
+    {
+        // Modules add their own *DatabaseInfo keys; playerbots contributes PlayerbotsDatabaseInfo.
+        File.WriteAllText(Path.Combine(_dir, "worldserver.conf"), """
+            LoginDatabaseInfo      = "127.0.0.1;3306;acore;pw;acore_wotlk_auth"
+            WorldDatabaseInfo      = "127.0.0.1;3306;acore;pw;acore_wotlk_world"
+            CharacterDatabaseInfo  = "127.0.0.1;3306;acore;pw;acore_wotlk_characters"
+            PlayerbotsDatabaseInfo = "127.0.0.1;3306;acore;pw;acore_wotlk_playerbots"
+            LoginDatabase.WorkerThreads = 1
+            """);
+
+        var result = AcoreConfigReader.Detect(_dir);
+
+        Assert.Equal(4, result.Databases.Count);
+        Assert.Contains("acore_wotlk_playerbots", result.Databases);
+    }
+
+    [Fact]
     public void Detect_FindsConf_InSiblingEtcFolder()
     {
         // AzerothCore's Windows layout: binaries in dist/bin, configs in dist/etc.
