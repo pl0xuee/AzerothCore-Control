@@ -2,18 +2,22 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- ============================= Palette (gunmetal grey) ============================= -->
-    <Color x:Key="WindowColor">#FF1B1F24</Color>
-    <Color x:Key="SurfaceColor">#FF23282F</Color>
-    <Color x:Key="SurfaceAltColor">#FF2B313A</Color>
-    <Color x:Key="ElevatedColor">#FF31384252</Color>
-    <Color x:Key="HoverColor">#FF39414C</Color>
-    <Color x:Key="PressedColor">#FF2A303A</Color>
-    <Color x:Key="BorderColor">#FF3A424D</Color>
-    <Color x:Key="BorderSubtleColor">#FF2E343D</Color>
-    <Color x:Key="TextPrimaryColor">#FFE8EBEF</Color>
-    <Color x:Key="TextSecondaryColor">#FF9AA4AF</Color>
-    <Color x:Key="TextMutedColor">#FF6E7883</Color>
+    <!-- ============================= Palette (dark gunmetal grey) =============================
+         A single neutral gunmetal ramp (no blue cast), stepping window → surface → alt → elevated so
+         depth reads by lightness alone. Every literal here is #AARRGGBB — 8 hex digits, no more: a
+         malformed Color throws only when first realized, which for an unused key is "never, until someone
+         uses it", i.e. it lies dormant and then takes the window down. -->
+    <Color x:Key="WindowColor">#FF15181B</Color>
+    <Color x:Key="SurfaceColor">#FF1E2226</Color>
+    <Color x:Key="SurfaceAltColor">#FF272C31</Color>
+    <Color x:Key="ElevatedColor">#FF2F353B</Color>
+    <Color x:Key="HoverColor">#FF373E45</Color>
+    <Color x:Key="PressedColor">#FF20252A</Color>
+    <Color x:Key="BorderColor">#FF363D44</Color>
+    <Color x:Key="BorderSubtleColor">#FF272C31</Color>
+    <Color x:Key="TextPrimaryColor">#FFE9EDF0</Color>
+    <Color x:Key="TextSecondaryColor">#FF98A2AA</Color>
+    <Color x:Key="TextMutedColor">#FF69737A</Color>
     <Color x:Key="AccentColor">#FF2ECC71</Color>
     <Color x:Key="AccentHoverColor">#FF35D67B</Color>
     <Color x:Key="GoldColor">#FFD9A94E</Color>
@@ -21,6 +25,8 @@
     <SolidColorBrush x:Key="WindowBrush" Color="{StaticResource WindowColor}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
     <SolidColorBrush x:Key="SurfaceAltBrush" Color="{StaticResource SurfaceAltColor}" />
+    <!-- Referencing ElevatedColor is also what forces it to be parsed at startup rather than lying in wait. -->
+    <SolidColorBrush x:Key="ElevatedBrush" Color="{StaticResource ElevatedColor}" />
     <SolidColorBrush x:Key="HoverBrush" Color="{StaticResource HoverColor}" />
     <SolidColorBrush x:Key="PressedBrush" Color="{StaticResource PressedColor}" />
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
@@ -33,9 +39,13 @@
     <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource GoldColor}" />
 
     <!-- Status brushes (used by StateToBrushConverter + dashboard) -->
-    <!-- Selected grid row: a green-tinted surface rather than a saturated fill, so row text stays readable. -->
-    <SolidColorBrush x:Key="RowSelectedBrush" Color="#FF26362C" />
+    <!-- Selected grid row: green-tinted rather than a saturated fill, so the row's text stays readable — but
+         far enough off the grey rows (incl. the alternating one) to be unmistakably "selected", since
+         selection is what drives the detail panel below the modules table. -->
+    <SolidColorBrush x:Key="RowSelectedBrush" Color="#FF1E3A2A" />
     <SolidColorBrush x:Key="ErrorTextBrush" Color="#FFFF6F60" />
+    <!-- Console/log background: a step below WindowColor so terminal output reads as a recessed surface. -->
+    <SolidColorBrush x:Key="ConsoleBackgroundBrush" Color="#FF101315" />
 
     <SolidColorBrush x:Key="RunningBrush" Color="#FF2ECC71" />
     <SolidColorBrush x:Key="StoppedBrush" Color="#FF7A828C" />
@@ -253,11 +263,18 @@
             <Setter.Value>
                 <ControlTemplate TargetType="TabControl">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top" Background="{StaticResource WindowBrush}"
+                        <!-- The strip is a step LIGHTER than the canvas below it, so it reads as its own band.
+                             It used to be WindowBrush, which was fine only while the content was SurfaceBrush;
+                             now that the canvas is WindowBrush that would put the two same-on-same and flatten
+                             the nested tab bars (Console's World/Auth, the Modules detail panel). -->
+                        <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
                                 BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
                             <TabPanel IsItemsHost="True" Margin="6,4,6,0" />
                         </Border>
-                        <Border Background="{StaticResource SurfaceBrush}">
+                        <!-- The canvas is the darkest step so Cards (SurfaceBrush) read as raised above it.
+                             When both were SurfaceBrush the cards were invisible except for their hairline
+                             border, which flattened the whole app. -->
+                        <Border Background="{StaticResource WindowBrush}">
                             <ContentPresenter ContentSource="SelectedContent" />
                         </Border>
                     </DockPanel>
@@ -294,7 +311,7 @@
 
     <!-- ============================= ListBox (console/logs) ============================= -->
     <Style TargetType="ListBox">
-        <Setter Property="Background" Value="#FF16191E" />
+        <Setter Property="Background" Value="{StaticResource ConsoleBackgroundBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -333,7 +350,9 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="RowBackground" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="AlternatingRowBackground" Value="#FF262C34" />
+        <!-- One step off SurfaceBrush, on the gunmetal ramp. This was a leftover blue-cast literal from the
+             old palette that ended up lighter than the selected-row brush, making selection unreadable. -->
+        <Setter Property="AlternatingRowBackground" Value="#FF232729" />
         <Setter Property="GridLinesVisibility" Value="Horizontal" />
         <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderSubtleBrush}" />
         <Setter Property="HeadersVisibility" Value="Column" />
@@ -389,6 +408,41 @@
                 <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- ============================= ToolTip =============================
+         Without this WPF falls back to the system tooltip: pale yellow, black text, square — the one piece
+         of stock chrome that lands right in the middle of a dark app.
+
+         KEYED, NOT IMPLICIT, and applied per-use. The tray icon's ToolTipText makes the TaskbarIcon build a
+         real ToolTip in the tray's separate popup presentation source, and themed implicit styles have
+         crashed that popup before (see the ContextMenu note at the bottom of this file). An implicit
+         TargetType="ToolTip" style would silently apply there too. -->
+    <Style x:Key="DarkToolTip" TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Background" Value="{StaticResource ElevatedBrush}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="MaxWidth" Value="520" />
+        <!-- Tooltips here carry build diagnostics — long single lines that must wrap rather than clip. -->
+        <Setter Property="ContentTemplate">
+            <Setter.Value>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" />
+                </DataTemplate>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border CornerRadius="6" Padding="10,7"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ============================= ComboBox ============================= -->

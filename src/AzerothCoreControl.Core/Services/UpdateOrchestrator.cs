@@ -61,17 +61,64 @@ public sealed class UpdateOrchestrator
     {
         var s = _settings();
         var runDir = s.DeployDirectory ?? s.RunDirectory;
-        bool worldWasRunning = _world.State == ServerState.Running;
+
+        // Track each server independently: we must restart exactly what we stopped, no more and no less.
+        var stoppedWorld = false;
+        var stoppedAuth = false;
+        var stoppedForUpdate = false;
+
+        // Shutting down is idempotent and lazy: a pull can reveal that a rebuild is needed (RebuildRecommended)
+        // after we've already decided not to stop, and binaries must never be swapped under a live server.
+        async Task EnsureStoppedAsync()
+        {
+            if (stoppedForUpdate)
+                return;
+
+            // Read LIVE state, not a snapshot from the top of RunAsync: this can first run minutes later,
+            // after a long backup, by which time an admin may have started a server that must not have its
+            // binaries swapped out from under it.
+            stoppedWorld = _world.State == ServerState.Running;
+            stoppedAuth = _auth.State == ServerState.Running;
+
+            // The flag means "we took servers down", so it stays false when there was nothing to take down —
+            // otherwise the restart step announces a restart it isn't performing.
+            if (!stoppedWorld && !stoppedAuth)
+                return;
+            stoppedForUpdate = true;
+
+            Report(progress, UpdateStep.Warn, "Warning players and shutting down gracefully...");
+            if (stoppedWorld)
+                await _world.StopAsync(graceful: true, cancellationToken).ConfigureAwait(false);
+            if (stoppedAuth)
+                await _auth.StopAsync(graceful: true, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Bring back exactly what we took down — never a server the user had deliberately stopped, and never
+        // one we didn't stop (it's still running).
+        void RestartIfWeStopped()
+        {
+            if (!stoppedForUpdate || string.IsNullOrWhiteSpace(runDir))
+                return;
+            Report(progress, UpdateStep.Restart, "Restarting servers...");
+            if (stoppedAuth)
+                _auth.Start(Path.Combine(runDir!, ServerKind.Auth.ExecutableName()), workingDirectory: runDir);
+            if (stoppedWorld)
+                _world.Start(Path.Combine(runDir!, ServerKind.World.ExecutableName()), workingDirectory: runDir);
+        }
+
+        // A step that failed BEFORE any binary was touched leaves the installed server perfectly runnable —
+        // so put it back up rather than leaving the realm down until someone notices the red text.
+        UpdateReport FailAndRestore(UpdateStep step, string message)
+        {
+            RestartIfWeStopped();
+            return Fail(progress, step, message);
+        }
 
         try
         {
-            // 1. Warn + graceful shutdown (only if running and we're going to swap binaries).
-            if (rebuild && (worldWasRunning || _auth.State == ServerState.Running))
-            {
-                Report(progress, UpdateStep.Warn, "Warning players and shutting down gracefully...");
-                await _world.StopAsync(graceful: true, cancellationToken).ConfigureAwait(false);
-                await _auth.StopAsync(graceful: true, cancellationToken).ConfigureAwait(false);
-            }
+            // 1. Warn + graceful shutdown (only if we already know we're going to swap binaries).
+            if (rebuild)
+                await EnsureStoppedAsync().ConfigureAwait(false);
 
             // 2. Backup before touching anything.
             if (s.Backup.BackupBeforeUpdate)
@@ -79,14 +126,14 @@ public sealed class UpdateOrchestrator
                 Report(progress, UpdateStep.Backup, "Backing up databases...");
                 var backup = await _backup.BackupAsync(m => Report(progress, UpdateStep.Backup, m), cancellationToken).ConfigureAwait(false);
                 if (!backup.Success)
-                    return Fail(progress, UpdateStep.Backup, backup.Message);
+                    return FailAndRestore(UpdateStep.Backup, backup.Message);
             }
 
             // 3. Pull the module.
             Report(progress, UpdateStep.Pull, $"Pulling {Path.GetFileName(modulePath)}...");
             var pull = _moduleUpdater.Pull(modulePath);
             if (!pull.Success)
-                return Fail(progress, UpdateStep.Pull, pull.Message);
+                return FailAndRestore(UpdateStep.Pull, pull.Message);
             Report(progress, UpdateStep.Pull, pull.Message);
             if (pull.SqlChanged)
                 Report(progress, UpdateStep.Pull, "Note: module SQL changed — enable DB auto-update or apply it before the next boot.");
@@ -95,14 +142,21 @@ public sealed class UpdateOrchestrator
             DeployResult? deployResult = null;
             if (rebuild || pull.RebuildRecommended)
             {
+                // The pull may have just told us a rebuild is needed when the caller didn't ask for one —
+                // stop the servers before anything overwrites the binaries they're running from.
+                await EnsureStoppedAsync().ConfigureAwait(false);
+
                 Report(progress, UpdateStep.Build, "Recompiling (this can take a while)...");
                 var build = await _build.BuildAsync(line => Report(progress, UpdateStep.Build, line), cancellationToken).ConfigureAwait(false);
                 if (!build.Success || build.BinaryOutputDir == null)
-                    return Fail(progress, UpdateStep.Build, $"Build failed (exit {build.ExitCode}).");
+                {
+                    // Nothing was deployed, so the installed binaries are still the ones that worked.
+                    return FailAndRestore(UpdateStep.Build, $"Build failed (exit {build.ExitCode}).");
+                }
 
                 // 5. Deploy — copies binaries + .conf.dist, NEVER the user's .conf.
                 if (string.IsNullOrWhiteSpace(runDir))
-                    return Fail(progress, UpdateStep.Deploy, "Run/deploy directory is not configured.");
+                    return FailAndRestore(UpdateStep.Deploy, "Run/deploy directory is not configured.");
                 Report(progress, UpdateStep.Deploy, "Deploying new binaries (preserving your .conf files)...");
                 deployResult = _deploy.Deploy(build.BinaryOutputDir, runDir!);
                 Report(progress, UpdateStep.Deploy,
@@ -110,13 +164,8 @@ public sealed class UpdateOrchestrator
                     $"preserved {deployResult.PreservedConfigs.Count} custom .conf files.");
             }
 
-            // 6. Restart if it was running before.
-            if (worldWasRunning && !string.IsNullOrWhiteSpace(runDir))
-            {
-                Report(progress, UpdateStep.Restart, "Restarting servers...");
-                _auth.Start(Path.Combine(runDir!, ServerKind.Auth.ExecutableName()), workingDirectory: runDir);
-                _world.Start(Path.Combine(runDir!, ServerKind.World.ExecutableName()), workingDirectory: runDir);
-            }
+            // 6. Bring the servers back up, now running the new binaries.
+            RestartIfWeStopped();
 
             return new UpdateReport(true, "Update complete.", deployResult);
         }

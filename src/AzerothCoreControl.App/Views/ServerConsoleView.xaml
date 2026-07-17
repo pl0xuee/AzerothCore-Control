@@ -36,13 +36,17 @@
             </TextBox>
         </DockPanel>
 
+        <!-- ScrollUnit=Pixel: rows wrap to different heights, and by default a ListBox scrolls in whole-item
+             units, which makes the scrollbar jump a full row at a time and the "is the user at the bottom?"
+             maths ambiguous. Pixel scrolling also makes ScrollToEnd land exactly at the last line. -->
         <ListBox ItemsSource="{Binding Output}"
                  SelectionMode="Extended"
                  beh:AutoScrollBehavior.Enabled="True"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  VirtualizingPanel.IsVirtualizing="True"
-                 VirtualizingPanel.VirtualizationMode="Recycling">
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 VirtualizingPanel.ScrollUnit="Pixel">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Grid>

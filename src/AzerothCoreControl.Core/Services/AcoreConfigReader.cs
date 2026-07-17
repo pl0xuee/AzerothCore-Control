@@ -133,7 +133,19 @@ public static class AcoreConfigReader
     /// <summary>Parse every <c>*DatabaseInfo = "host;port;user;pass;db"</c> line in a conf file, in file order.</summary>
     public static IEnumerable<AcoreDbInfo> ReadAllDatabaseInfos(string confPath)
     {
-        foreach (var raw in File.ReadLines(confPath))
+        // A .conf can exist but be unreadable (locked by an editor, or ACL'd). Detection is best-effort
+        // across many files — one unreadable file must not take down the caller, which runs on the UI thread.
+        string[] lines;
+        try
+        {
+            lines = File.ReadAllLines(confPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            yield break;
+        }
+
+        foreach (var raw in lines)
         {
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith('#'))

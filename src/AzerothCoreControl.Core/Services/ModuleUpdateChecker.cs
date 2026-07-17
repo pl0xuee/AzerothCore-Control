@@ -37,15 +37,30 @@ public sealed partial class ModuleUpdateChecker
         }
     }
 
-    /// <summary>List installed modules (immediate subdirectories of <c>modules/</c> that are git repos).</summary>
+    /// <summary>
+    /// List installed modules: every immediate subdirectory of <c>modules/</c>, git repo or not.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately does NOT filter to git repos. A module installed by unzipping a GitHub download —
+    /// which is how plenty of AzerothCore modules get installed — has no .git folder, and filtering those out
+    /// made them vanish from the Modules tab entirely, with nothing to explain why. They're listed now and
+    /// <see cref="CheckOneAsync"/> reports what's wrong with them instead.
+    /// </remarks>
     public IReadOnlyList<string> ListModulePaths()
     {
         var folder = ModulesFolder;
         if (folder == null) return Array.Empty<string>();
-        return Directory.EnumerateDirectories(folder)
-            .Where(d => Repository.IsValid(d))
-            .OrderBy(Path.GetFileName)
-            .ToList();
+        try
+        {
+            return Directory.EnumerateDirectories(folder)
+                .OrderBy(Path.GetFileName)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.LogWarning(ex, "Could not enumerate modules in {Folder}", folder);
+            return Array.Empty<string>();
+        }
     }
 
     /// <summary>Compute update status for every installed module.</summary>
@@ -65,6 +80,19 @@ public sealed partial class ModuleUpdateChecker
     {
         var name = Path.GetFileName(modulePath);
         github ??= CreateGitHubClient();
+
+        // Listed but not a git repo — almost always a module installed from a ZIP download. Say so plainly:
+        // update checking needs git history to compare against the remote.
+        if (!Repository.IsValid(modulePath))
+        {
+            return new ModuleStatus
+            {
+                Name = name,
+                Path = modulePath,
+                Error = "not a git repository — installed from a ZIP? Re-clone it with git to enable update checks",
+            };
+        }
+
         try
         {
             using var repo = new Repository(modulePath);

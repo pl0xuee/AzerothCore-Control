@@ -107,6 +107,14 @@ public sealed class ServerProcessSupervisor : IDisposable
                 return;
             CancelPendingRestart();
             _intentionalStop = false;
+
+            // A manual start is a fresh attempt: the user has (presumably) fixed whatever was killing the
+            // server. Carrying the old counters over means the crash-loop breaker can trip on the FIRST
+            // crash of the new session, and the backoff resumes at minutes instead of seconds.
+            _recentCrashes.Clear();
+            _consecutiveCrashes = 0;
+            _consecutiveQuickCrashes = 0;
+
             try
             {
                 LaunchLocked(executablePath, arguments, workingDirectory);
@@ -170,11 +178,19 @@ public sealed class ServerProcessSupervisor : IDisposable
         await WaitOrTimeoutAsync(stopped, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Await <paramref name="task"/> up to <paramref name="timeout"/>; true if it completed in time.</summary>
+    /// <summary>
+    /// Await <paramref name="task"/> up to <paramref name="timeout"/>; true if it completed in time.
+    /// Throws if <paramref name="cancellationToken"/> fires: cancelling is NOT a timeout, and callers treat
+    /// a false return as "the graceful drain failed, force-kill it" — which would make cancelling an update
+    /// kill the world server mid-save, the most destructive possible outcome of pressing Cancel.
+    /// </summary>
     private async Task<bool> WaitOrTimeoutAsync(Task task, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var completed = await Task.WhenAny(task, Task.Delay(timeout, _time, cancellationToken)).ConfigureAwait(false);
-        return completed == task;
+        if (completed == task)
+            return true;
+        cancellationToken.ThrowIfCancellationRequested();
+        return false;
     }
 
     /// <summary>
@@ -211,6 +227,11 @@ public sealed class ServerProcessSupervisor : IDisposable
     {
         SetStateLocked(ServerState.Starting);
         _log.LogInformation("Starting {Server} from {Path}", _kind, executablePath);
+
+        // Drop the previous process's output: the crash diagnostic scans this buffer for an error line, and
+        // a new process that dies silently (e.g. a missing DLL) would otherwise be blamed on the old one's
+        // last error, pointing the user at the wrong cause entirely.
+        _recentOutput.Clear();
 
         var spec = new ProcessStartSpec(executablePath, arguments, workingDirectory);
         _currentSpec = spec;

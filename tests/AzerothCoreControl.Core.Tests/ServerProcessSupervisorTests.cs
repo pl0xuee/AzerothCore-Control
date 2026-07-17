@@ -171,6 +171,84 @@ public class ServerProcessSupervisorTests
     }
 
     [Fact]
+    public async Task ManualStart_AfterCrashLoopTripped_ResetsTheBreaker()
+    {
+        // Regression: the crash counters survived a manual Start, so after the user fixed the cause (e.g.
+        // brought MySQL back) the breaker tripped again on the very FIRST crash of the new session.
+        var (sup, launcher, events, _) = CreateWorld(w =>
+        {
+            w.CrashLoopThreshold = 3;
+            w.CrashWindow = TimeSpan.FromMinutes(10);
+        });
+
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+        launcher.Last.SimulateExit(139);
+        await launcher.WaitForLaunchCountAsync(2, Timeout);
+        launcher.Last.SimulateExit(139);
+        await launcher.WaitForLaunchCountAsync(3, Timeout);
+        launcher.Last.SimulateExit(139);
+        await AssertEventuallyAsync(() => sup.State == ServerState.Crashed);
+        Assert.Equal(3, launcher.LaunchCount);
+
+        // User fixes the problem and starts it again — still inside the 10-minute crash window.
+        events.Clear();
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(4, Timeout);
+
+        // One fresh crash must be treated as the first, not the fourth: it relaunches instead of tripping.
+        launcher.Last.SimulateExit(139);
+        await launcher.WaitForLaunchCountAsync(5, Timeout);
+        Assert.DoesNotContain(events, e => e.Kind == SupervisorEventKind.CrashLoopTripped);
+    }
+
+    [Fact]
+    public async Task StopAsync_CancelledMidDrain_DoesNotKillTheServer()
+    {
+        // Regression: cancellation was indistinguishable from "graceful drain timed out", so pressing Cancel
+        // on an update hard-killed worldserver mid-save — the most destructive possible outcome of Cancel.
+        var (sup, launcher, _, _) = CreateWorld();
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        using var cts = new CancellationTokenSource();
+        var stopping = sup.StopAsync(graceful: true, cts.Token);
+
+        // The drain command is out; the server is saving and has not exited yet.
+        await AssertEventuallyAsync(() =>
+            launcher.Last.StdinLines.Any(l => l.StartsWith(".server shutdown", StringComparison.OrdinalIgnoreCase)));
+
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopping);
+        Assert.False(launcher.Last.HasExited); // still draining on its own terms — not killed
+    }
+
+    [Fact]
+    public async Task Relaunch_DoesNotReportThePreviousProcessesError()
+    {
+        // Regression: the recent-output buffer was never cleared, so a new process that died silently was
+        // blamed on the OLD process's last error, pointing the user at the wrong cause.
+        var (sup, launcher, events, time) = CreateWorld();
+        sup.Start("worldserver.exe");
+        await launcher.WaitForLaunchCountAsync(1, Timeout);
+
+        launcher.Last.EmitError("FATAL: Cannot connect to database");
+        time.Advance(TimeSpan.FromMinutes(5));
+        launcher.Last.SimulateExit(139);
+        await launcher.WaitForLaunchCountAsync(2, Timeout);
+
+        // The relaunched process says nothing at all, then dies.
+        events.Clear();
+        time.Advance(TimeSpan.FromMinutes(5));
+        launcher.Last.SimulateExit(139);
+
+        await AssertEventuallyAsync(() => events.Any(e => e.Kind == SupervisorEventKind.Crashed));
+        var crash = events.First(e => e.Kind == SupervisorEventKind.Crashed);
+        Assert.DoesNotContain("Cannot connect to database", crash.Message);
+    }
+
+    [Fact]
     public async Task AuthServer_ExitCode1_IsTreatedAsCrash_NotInfiniteRestart()
     {
         // Regression: authserver has no restart command, so exit 1 is an error — it must NOT be honored as

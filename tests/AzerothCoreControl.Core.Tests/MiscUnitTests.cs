@@ -16,6 +16,62 @@ public class ExitCodePolicyTests
         => Assert.Equal(expected, ExitCodePolicy.Classify(code));
 }
 
+public class BuildDiagnosticsTests
+{
+    [Fact]
+    public void PicksCompilerErrorsOutOfNoise()
+    {
+        var output = new[]
+        {
+            "[build] cmake --build ...",
+            "  playerbot.cpp",
+            @"C:\src\mod-playerbots\src\Bot.cpp(88,12): error C2065: 'foo': undeclared identifier [C:\build\mod.vcxproj]",
+            "  Generating code...",
+            "LINK : fatal error LNK1104: cannot open file 'ace.lib' [C:\\build\\worldserver.vcxproj]",
+            "    2 Error(s)",
+        };
+
+        var errors = BuildDiagnostics.ExtractErrors(output);
+
+        Assert.Equal(2, errors.Count);
+        Assert.Contains("C2065", errors[0]);
+        Assert.Contains("LNK1104", errors[1]);
+    }
+
+    [Fact]
+    public void DedupesTheSameErrorReportedBySeveralProjects()
+    {
+        var output = new[]
+        {
+            @"C:\src\Bot.cpp(88,12): error C2065: 'foo': undeclared identifier [C:\build\a.vcxproj]",
+            @"C:\src\Bot.cpp(88,12): error C2065: 'foo': undeclared identifier [C:\build\b.vcxproj]",
+        };
+
+        Assert.Single(BuildDiagnostics.ExtractErrors(output));
+    }
+
+    [Fact]
+    public void FindsCMakeConfigureErrors()
+    {
+        var output = new[] { "CMake Error at CMakeLists.txt:5 (find_package):", "  Could not find MySQL." };
+        Assert.Single(BuildDiagnostics.ExtractErrors(output));
+    }
+
+    [Fact]
+    public void IgnoresSummaryLinesThatMentionErrors()
+    {
+        var output = new[] { "    0 Error(s)", "Build succeeded.", "[build] cmake --build ..." };
+        Assert.Empty(BuildDiagnostics.ExtractErrors(output));
+    }
+
+    [Fact]
+    public void CapsTheNumberOfErrors()
+    {
+        var output = Enumerable.Range(0, 100).Select(i => $"file{i}.cpp(1,1): error C2065: bad {i}");
+        Assert.Equal(BuildDiagnostics.MaxErrors, BuildDiagnostics.ExtractErrors(output).Count);
+    }
+}
+
 public class ResolveCMakeGuiTests
 {
     [Fact]

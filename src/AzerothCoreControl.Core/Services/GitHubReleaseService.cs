@@ -56,11 +56,25 @@ public sealed class GitHubReleaseService
         catch (Octokit.NotFoundException)
         {
             // No "latest" (e.g. only pre-releases) — fall back to the most recent of all releases.
-            var all = await client.Repository.Release.GetAll(owner, repo, new ApiOptions { PageCount = 1, PageSize = 1 }).ConfigureAwait(false);
-            var newest = all.FirstOrDefault();
-            return newest == null ? null : Map(newest);
+            // This runs inside a catch block, so its own failures are NOT caught by the clauses below;
+            // it needs its own guard or a typo'd repo name takes down the caller.
+            try
+            {
+                var all = await client.Repository.Release
+                    .GetAll(owner, repo, new ApiOptions { PageCount = 1, PageSize = 1 })
+                    .ConfigureAwait(false);
+                var newest = all.FirstOrDefault();
+                return newest == null ? null : Map(newest);
+            }
+            catch (Exception ex) when (ex is ApiException or HttpRequestException)
+            {
+                _log.LogWarning(ex, "No releases found for {Owner}/{Repo}", owner, repo);
+                return null;
+            }
         }
-        catch (ApiException ex)
+        // Octokit surfaces DNS/connectivity/TLS failures as HttpRequestException, which is not an
+        // ApiException — without it, a network blip escapes and faults the background update loop.
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
         {
             _log.LogWarning(ex, "Failed to fetch releases for {Owner}/{Repo}", owner, repo);
             return null;

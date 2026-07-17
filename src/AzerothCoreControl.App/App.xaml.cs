@@ -174,7 +174,15 @@ public partial class App : System.Windows.Application
         catch { /* nothing more we can do */ }
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    /// <summary>
+    /// Shutdown cleanup. This MUST be synchronous: as an `async void` it returned to WPF at the first await,
+    /// letting the Dispatcher tear down mid-cleanup, so the World/Auth Dispose that actually kills the
+    /// child processes never reliably ran — the servers were left orphaned, holding ports 8085/3724, and
+    /// the next launch had to kill them as "stale". Blocking here is safe: everything awaited below uses
+    /// ConfigureAwait(false) and the supervisors' state callbacks use BeginInvoke, so nothing needs the
+    /// UI thread we're blocking.
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
     {
         _showEventRegistration?.Unregister(null);
         _showEvent?.Dispose();
@@ -182,9 +190,17 @@ public partial class App : System.Windows.Application
         if (_coordinator != null)
         {
             _coordinator.AppUpdater.Stop();
-            await _coordinator.DisposeAsync();
+            try
+            {
+                if (!_coordinator.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(15)))
+                    Log.Warning("Shutdown cleanup timed out; server processes may still be running.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Shutdown cleanup failed");
+            }
         }
-        await Log.CloseAndFlushAsync();
+        Log.CloseAndFlush();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }

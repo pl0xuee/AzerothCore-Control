@@ -47,8 +47,20 @@ public sealed class AppUpdater
             await Task.Delay(TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
             while (!ct.IsCancellationRequested)
             {
-                if (_coordinator.Settings.AutoCheckForUpdates)
-                    await CheckAndMaybeInstallAsync(ct).ConfigureAwait(false);
+                // One failed check must not end the loop. This task is fire-and-forget, so anything escaping
+                // here would fault it silently — no more update checks for the rest of the session — and then
+                // resurface at a random GC as an unobserved-exception dialog.
+                try
+                {
+                    if (_coordinator.Settings.AutoCheckForUpdates)
+                        await CheckAndMaybeInstallAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "Background update check failed; will retry at the next interval");
+                    StageChanged?.Invoke(AppUpdateStage.Idle, "Update check failed: " + ex.Message);
+                }
 
                 var interval = _coordinator.Settings.AppUpdateCheckInterval;
                 if (interval < TimeSpan.FromMinutes(5)) interval = TimeSpan.FromMinutes(5);

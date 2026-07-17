@@ -127,6 +127,19 @@ public sealed class ServerCoordinator : IAsyncDisposable
             throw new FileNotFoundException(
                 $"{kind.ExecutableName()} was not found in the run directory. Check the Run directory in Settings.", exe);
 
+        var sup = kind == ServerKind.World ? World : Auth;
+
+        // Already ours and alive — nothing to start. This check MUST come before the cleanup below: that
+        // matches purely on exe path, so it cannot tell our own live server from an orphan and would kill
+        // it outright (no player warning, no character save) while Start() silently no-ops on a running
+        // supervisor. "Start all" with only one server down would take the other one with it.
+        //
+        // Only Running/Starting — deliberately NOT Restarting. In Restarting the process has already exited
+        // and we're sitting out a crash backoff (up to 5 minutes); a manual start there means "bring it up
+        // now", which Start() honours by cancelling the pending restart. Skipping would silently do nothing.
+        if (sup.State is ServerState.Running or ServerState.Starting)
+            return;
+
         // Clean up any orphaned instance of this exact server (e.g. left over from a prior restart storm)
         // so it doesn't hold the login/world port and make the fresh start fail to bind.
         var killed = ProcessCleanup.KillStaleInstances(exe);
@@ -134,7 +147,6 @@ public sealed class ServerCoordinator : IAsyncDisposable
             _ = Notifications.NotifyAsync(kind.DisplayName(),
                 $"Cleaned up {killed} orphaned {kind.ExecutableName()} process(es) before starting.", NotificationSeverity.Info);
 
-        var sup = kind == ServerKind.World ? World : Auth;
         sup.Start(exe, workingDirectory: runDir);
     }
 
@@ -159,8 +171,12 @@ public sealed class ServerCoordinator : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await Schedule.DisposeAsync().ConfigureAwait(false);
+        // Kill the child processes FIRST. These are synchronous and immediate, whereas draining the
+        // scheduler can park on a job that cannot be cancelled — a multi-GB world dump being zipped runs for
+        // minutes. Behind that await, any bounded wait on shutdown expires before the servers are killed and
+        // they outlive the app, holding ports 3724/8085.
         World.Dispose();
         Auth.Dispose();
+        await Schedule.DisposeAsync().ConfigureAwait(false);
     }
 }

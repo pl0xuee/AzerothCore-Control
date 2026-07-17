@@ -4,6 +4,72 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-07-16
+
+### Fixed
+- **Modules installed from a ZIP were missing from the Modules tab.** The list only included directories that
+  were git repositories, so any module installed by unzipping a GitHub download was dropped silently, with
+  nothing to explain the omission. Every directory under `modules/` is now listed; ones that aren't git
+  checkouts say so in the Status column instead of disappearing, and the summary line no longer reports
+  "all up to date" while quietly ignoring them.
+- **"Start all" could kill a running world server.** The orphan cleanup that frees a held port matches purely
+  on executable path, so it could not tell a live supervised server from a leftover — and it ran *before*
+  the start, which then silently no-opped because the server was already running. With world up and auth
+  down, "Start all" killed worldserver outright: no `.server shutdown`, no player warning, no character
+  save, followed by a watchdog "crash" restart. Cleanup now only runs when the server is actually down.
+- **Cancelling an update force-killed the world server mid-save.** A cancelled wait was indistinguishable
+  from a timed-out graceful drain, and a timeout means "kill it" — so pressing Cancel produced the most
+  destructive outcome available. Cancelling now aborts the wait and leaves the server to finish draining.
+- **Quitting orphaned the servers.** `OnExit` was `async void`, so it returned to WPF at the first await and
+  the Dispatcher tore down before the cleanup that kills the child processes ran. worldserver/authserver
+  were left running headless holding ports 3724/8085 — which is why launches so often reported cleaning up
+  "orphaned" processes. Shutdown cleanup is now synchronous and bounded.
+- **A failed update left the realm down.** A failure during backup, pull, or build returned without bringing
+  the servers back, even though nothing had been deployed and the installed binaries still worked.
+- **Updating with the world server already stopped took authserver down for good.** Shutdown stopped both
+  servers if *either* was running, but the restart only keyed off the world server — so authserver stayed
+  down under a report that said "Update complete." The mirror case also started a server the user had
+  deliberately stopped. Each server is now tracked independently: exactly what was stopped is restarted.
+- **Binaries could be deployed under live servers.** Shutdown was gated on the caller asking for a rebuild,
+  but the build/deploy ran whenever the pull *recommended* one — overwriting a running .exe. The shutdown is
+  now re-checked at the point the rebuild is decided.
+- **One network blip permanently disabled auto-update** and later popped a raw stack-trace dialog. Octokit
+  reports connectivity failures as `HttpRequestException`, which was not caught, so it faulted the
+  fire-and-forget check loop for the rest of the session and resurfaced at a random GC as an
+  unobserved-exception message box. Also, the "no latest release" fallback ran *inside* a catch block, where
+  sibling catches don't apply, so a typo'd repo name escaped the same way.
+- **The crash-loop breaker could trip on the first crash after a manual start.** Crash counters survived a
+  Start, so after fixing the cause (e.g. bringing MySQL back) an unrelated crash minutes later could trip
+  the breaker immediately, and the restart backoff resumed at minutes instead of seconds.
+- **Crash notifications could quote the previous process's error.** The recent-output buffer was never
+  cleared on relaunch, so a process that died silently was blamed on the *old* process's last error.
+- **One collision with the UI thread silently killed the scheduler.** Ticks enumerated the same job list the
+  UI mutates, and the loop caught only cancellation — so adding a job during a tick faulted the loop and
+  every scheduled backup and restart stopped firing until the app was restarted, with nothing shown.
+- **Scheduled jobs could be skipped entirely.** Jobs fired only if a tick landed inside their exact minute,
+  but ticks are collapsed while a job runs — so a 6-minute backup starting at 03:00 ate a 03:05 restart's
+  only chance to fire. Jobs now run within a 10-minute catch-up window.
+- **The Pull button stayed enabled during a build,** letting a `git pull` run against the source tree the
+  compiler was reading.
+- **An unreadable .conf crashed path auto-detection** with a raw stack-trace dialog.
+- **The console could stall and fall behind during heavy output.** The flush tick and the auto-scroll both
+  ran at `DispatcherPriority.Background` — below Input — so they were starved by the very layout storm they
+  needed to keep up with. Auto-scroll also measured "near the bottom" in a 48-unit slack against a list that
+  scrolls in *item* units, not pixels, so reading a few lines up still snapped you to the end. Auto-scroll
+  now follows the scroll viewer's own extent changes, and releases only when you actually scroll away.
+- **A malformed colour in the theme** (`#FF31384252` — ten hex digits) sat unreferenced; the first use would
+  have thrown at window construction.
+
+### Changed
+- **Dark gunmetal grey theme.** A single neutral gunmetal ramp with no blue cast. Cards now sit on a darker
+  canvas instead of sharing the tab background, which previously made them invisible except for a hairline
+  border. Tooltips are themed rather than falling back to the system's pale-yellow box.
+- **Default window is now 1280×840** (minimum 1040×660). The three dashboard cards were fixed at 316px and
+  only just fit the old 1060 default; below it the third wrapped onto a line of its own. They are now equal
+  thirds that scale with the window.
+- **Schedules list no longer overflows the tab** — the grid was in a StackPanel, which gave it unbounded
+  height and no scrollbar.
+
 ## [0.1.9] - 2026-07-16
 
 ### Added

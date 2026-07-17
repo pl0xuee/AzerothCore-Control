@@ -38,7 +38,11 @@ public sealed partial class ServerConsoleViewModel : ObservableObject
 
         _supervisor.OutputLine += (_, line) => Enqueue(ConsoleLine.FromServer(line));
 
-        _flushTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        // DispatcherTimer defaults to DispatcherPriority.Background, which sits BELOW Input — during a
+        // startup firehose the dispatcher is saturated with layout and the flush tick gets starved, so the
+        // console visibly stalls exactly when output matters most. Showing server output is this app's job;
+        // give it Normal. The work per tick is small (append a batch, trim the overflow).
+        _flushTimer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(200) };
         _flushTimer.Tick += (_, _) => Flush();
         _flushTimer.Start();
     }

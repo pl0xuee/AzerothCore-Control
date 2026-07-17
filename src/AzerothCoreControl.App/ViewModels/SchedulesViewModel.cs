@@ -37,7 +37,9 @@ public sealed partial class SchedulesViewModel : ObservableObject
             TimeOfDay = new TimeSpan(Math.Clamp(NewJobHour, 0, 23), Math.Clamp(NewJobMinute, 0, 59), 0),
         };
         Jobs.Add(job);
-        _coordinator.Settings.Schedules.Add(job);
+        // Swap in a new list rather than mutating in place: the scheduler enumerates this same list from a
+        // background thread, and mutating it mid-tick throws "Collection was modified" inside the loop.
+        _coordinator.Settings.Schedules = new List<ScheduledJob>(_coordinator.Settings.Schedules) { job };
         _coordinator.SaveSettings();
     }
 
@@ -46,7 +48,10 @@ public sealed partial class SchedulesViewModel : ObservableObject
     {
         if (job == null) return;
         Jobs.Remove(job);
-        _coordinator.Settings.Schedules.RemoveAll(j => j.Id == job.Id);
+        // Swap, don't mutate — see AddJob.
+        _coordinator.Settings.Schedules = _coordinator.Settings.Schedules
+            .Where(j => j.Id != job.Id)
+            .ToList();
         _coordinator.SaveSettings();
     }
 
