@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-07-17
+
+### Changed
+- **Layout pass across the app.** Page padding was 8, 12 or 16 depending on the tab, and vertical gaps used
+  4/6/8/10/12/14/16 with no pattern — the thing that makes a layout read as "almost aligned". There's now one
+  spacing scale, applied everywhere: 12 between blocks, 8 between tightly-related items. Cards no longer carry
+  their own margin (a card shouldn't decide how far it sits from its neighbours; its container should), which
+  is what made padding and margins compound differently on every tab.
+- **Settings is grouped into cards, and the save bar is docked.** It was one flat list of ~20 fields whose six
+  sections sat at identical visual depth, with Save at the bottom of a long scroll — so saving the field you
+  just edited meant scrolling to find the button. Save and Auto-detect are now always visible.
+- **The header shows live World/Auth status.** Whether the realm is up is the question this app exists to
+  answer, and it was only visible on the Dashboard tab.
+- **The dashboard tiles are genuinely equal thirds.** They were laid out in a UniformGrid, which gives every
+  child the same width and consumes each child's margin *inside* it — so adding gaps made two tiles narrower
+  than the third. The gaps are now real columns.
+
+### Added
+- **"Include the server's config folder in backups" is now a setting you can see.** It existed and was on by
+  default, but had no UI — it could only be changed by hand-editing settings.json.
+
 ## [0.1.13] - 2026-07-17
 
 ### Fixed

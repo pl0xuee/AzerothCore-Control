@@ -23,15 +23,34 @@
 
     <DockPanel>
         <!-- ===== Header bar ===== -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource WindowBrush}" Padding="16,12"
+        <Border DockPanel.Dock="Top" Background="{StaticResource WindowBrush}" Padding="16,10"
                 BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal">
-                <Image Source="/Assets/appicon.ico" Width="30" Height="30" VerticalAlignment="Center" />
-                <TextBlock Text="AzerothCore Control" FontSize="18" FontWeight="SemiBold"
-                           VerticalAlignment="Center" Margin="12,0,0,0" />
-                <TextBlock Text="server supervisor &amp; updater" Style="{StaticResource Muted}"
-                           VerticalAlignment="Bottom" Margin="10,0,0,3" FontSize="12" />
-            </StackPanel>
+            <DockPanel>
+                <!-- Live status, pinned to the header: whether the realm is up is the question this app
+                     exists to answer, and it was only visible on the Dashboard tab. -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,0" DataContext="{Binding World}">
+                        <Ellipse Width="9" Height="9" VerticalAlignment="Center"
+                                 Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
+                        <TextBlock Text="World" Margin="7,0,0,0" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding StatusText}" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" DataContext="{Binding Auth}">
+                        <Ellipse Width="9" Height="9" VerticalAlignment="Center"
+                                 Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
+                        <TextBlock Text="Auth" Margin="7,0,0,0" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding StatusText}" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="/Assets/appicon.ico" Width="28" Height="28" VerticalAlignment="Center" />
+                    <TextBlock Text="AzerothCore Control" FontSize="17" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="12,0,0,0" />
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <!-- ===== Status bar ===== -->
@@ -47,18 +66,31 @@
         <TabControl Margin="0">
             <!-- ===== Dashboard ===== -->
             <TabItem Header="Dashboard">
-                <StackPanel Margin="8">
+                <StackPanel Margin="{StaticResource PagePadding}">
                     <!-- Equal thirds rather than fixed-width cards in a WrapPanel: at 316px each they only
                          just fit the old default width, and any narrower window wrapped the third card onto
-                         a line of its own, leaving a hole. These scale with the window instead. -->
-                    <UniformGrid Rows="1" Columns="3">
+                         a line of its own, leaving a hole. These scale with the window instead.
+
+                         A Grid with explicit 12px spacer columns, NOT a UniformGrid: UniformGrid hands every
+                         child the same width and the child's margin is consumed inside that rect, so putting
+                         the gap on the two left tiles made them 12px narrower than the third — and putting it
+                         on all three leaves a dead strip against the page padding. The gap has to be a column. -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
                         <!-- One card control, bound per server: this was ~35 lines of identical markup
                              duplicated, so every change had to be made twice and could drift. -->
-                        <views:ServerCardView DataContext="{Binding World}" />
-                        <views:ServerCardView DataContext="{Binding Auth}" />
+                        <views:ServerCardView Grid.Column="0" DataContext="{Binding World}" />
+                        <views:ServerCardView Grid.Column="2" DataContext="{Binding Auth}" />
 
                         <!-- MySQL card -->
-                        <Border Style="{StaticResource Card}">
+                        <Border Grid.Column="4" Style="{StaticResource Card}">
                             <StackPanel>
                                 <TextBlock Text="MySQL" FontSize="17" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding MySqlState}" Margin="0,12,0,0" FontSize="20" FontWeight="Light" />
@@ -66,9 +98,9 @@
                                         Style="{StaticResource SubtleButton}" HorizontalAlignment="Left" Margin="0,12,0,0" />
                             </StackPanel>
                         </Border>
-                    </UniformGrid>
+                    </Grid>
 
-                    <Border Style="{StaticResource Card}" Margin="8,4">
+                    <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="▶  Start all" Command="{Binding StartAllCommand}" Style="{StaticResource AccentButton}" />
                             <Button Content="■  Stop all" Command="{Binding StopAllCommand}" />
@@ -93,8 +125,8 @@
 
             <!-- ===== Modules ===== -->
             <TabItem Header="Modules" DataContext="{Binding Modules}">
-                <DockPanel Margin="12">
-                    <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,10">
+                <DockPanel Margin="{StaticResource PagePadding}">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardStacked}">
                         <StackPanel>
                             <Button Content="Check modules for updates" Command="{Binding CheckModulesCommand}"
                                     Style="{StaticResource AccentButton}" HorizontalAlignment="Left" />
@@ -104,10 +136,10 @@
 
                     <!-- Detail panel for the selected module: what a pull would bring in, and why the last
                          build failed. -->
-                    <TabControl DockPanel.Dock="Bottom" Margin="0,10,0,0" Height="230"
+                    <TabControl DockPanel.Dock="Bottom" Margin="0,12,0,0" Height="230"
                                 Visibility="{Binding SelectedModule, Converter={StaticResource NullToVis}}">
                         <TabItem Header="What changed">
-                            <DockPanel Margin="14">
+                            <DockPanel Margin="16">
                                 <TextBlock DockPanel.Dock="Top" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,0,8">
                                     <Run Text="Commits in " /><Run Text="{Binding SelectedModule.Name, Mode=OneWay}" /><Run Text=" not yet pulled" />
                                 </TextBlock>
@@ -122,7 +154,7 @@
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="{Binding ShortSha}" FontFamily="Cascadia Mono, Consolas"
-                                                               Foreground="{StaticResource GoldBrush}" Margin="0,0,10,0" />
+                                                               Foreground="{StaticResource GoldBrush}" Margin="0,0,12,0" />
                                                     <TextBlock Grid.Column="1" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
                                                     <TextBlock Grid.Column="2" Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" FontSize="11">
                                                         <Run Text="{Binding Author, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, StringFormat=yyyy-MM-dd, Mode=OneWay}" />
@@ -136,7 +168,7 @@
                         </TabItem>
 
                         <TabItem Header="Build report">
-                            <Grid Margin="14">
+                            <Grid Margin="16">
                                 <!-- Nothing to show until a build has actually failed. -->
                                 <TextBlock Text="No failed build for this module in this session. If a build fails, the compiler errors land here."
                                            TextWrapping="Wrap" VerticalAlignment="Top">
@@ -319,10 +351,10 @@
 
             <!-- ===== Configs (.conf editor) ===== -->
             <TabItem Header="Configs" DataContext="{Binding Configs}">
-                <DockPanel Margin="12">
+                <DockPanel Margin="{StaticResource PagePadding}">
                     <!-- Action bar. The restart note matters: the server reads .conf only at boot, so a save
                          alone changes nothing on a running realm. -->
-                    <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                         <Button DockPanel.Dock="Right" Content="Save" Command="{Binding SaveCommand}"
                                 IsEnabled="{Binding IsDirty}" Style="{StaticResource AccentButton}" Margin="4,0,0,0" />
                         <Button DockPanel.Dock="Right" Content="Revert" Command="{Binding RevertCommand}"
@@ -343,7 +375,7 @@
                     </DockPanel>
 
                     <!-- File list -->
-                    <Border DockPanel.Dock="Left" Width="230" Margin="0,0,10,0"
+                    <Border DockPanel.Dock="Left" Width="230" Margin="0,0,12,0"
                             Background="{StaticResource SurfaceBrush}"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8">
                         <DockPanel Margin="8">
@@ -389,11 +421,11 @@
 
             <!-- ===== Updates (app self-update) ===== -->
             <TabItem Header="Updates" DataContext="{Binding Updates}">
-                <StackPanel Margin="12" MaxWidth="720" HorizontalAlignment="Left">
-                    <Border Style="{StaticResource Card}">
+                <StackPanel Margin="{StaticResource PagePadding}" MaxWidth="760" HorizontalAlignment="Left">
+                    <Border Style="{StaticResource CardStacked}">
                         <StackPanel>
                             <TextBlock Text="Application updates" FontSize="16" FontWeight="SemiBold" />
-                            <Grid Margin="0,14,0,0">
+                            <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
@@ -408,28 +440,28 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock Margin="0,10,0,0" Style="{StaticResource Muted}">
+                            <TextBlock Margin="0,12,0,0" Style="{StaticResource Muted}">
                                 <Run Text="Source: " /><Run Text="{Binding RepositoryName, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" />
                             </TextBlock>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                 <Button Content="Check for updates" Command="{Binding CheckForUpdateCommand}" Style="{StaticResource AccentButton}" />
                                 <Button Content="Install &amp; restart" Command="{Binding InstallUpdateCommand}"
                                         Style="{StaticResource AccentButton}"
                                         Visibility="{Binding HasAppUpdate, Converter={StaticResource BoolToVis}}" />
                             </StackPanel>
 
-                            <ProgressBar Height="6" Margin="4,12,0,0" Minimum="0" Maximum="100"
+                            <ProgressBar Height="6" Margin="0,12,0,0" Minimum="0" Maximum="100"
                                          Value="{Binding DownloadProgress}"
                                          Background="{StaticResource SurfaceAltBrush}" Foreground="{StaticResource AccentBrush}"
                                          BorderThickness="0"
                                          Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" />
 
-                            <TextBlock Text="{Binding StatusMessage}" Margin="4,12,0,0" Foreground="{StaticResource GoldBrush}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding StatusMessage}" Margin="0,12,0,0" Foreground="{StaticResource GoldBrush}" TextWrapping="Wrap" />
 
-                            <StackPanel Margin="0,16,0,0">
-                                <CheckBox Content="Automatically check for updates" IsChecked="{Binding AutoCheck}" Margin="0,4" />
-                                <CheckBox Content="Automatically download &amp; install updates (restarts the app)" IsChecked="{Binding AutoInstall}" Margin="0,4" />
+                            <StackPanel Margin="0,12,0,0">
+                                <CheckBox Content="Automatically check for updates" IsChecked="{Binding AutoCheck}" Margin="0,0,0,8" />
+                                <CheckBox Content="Automatically download &amp; install updates (restarts the app)" IsChecked="{Binding AutoInstall}" Margin="0,0,0,8" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -452,8 +484,8 @@
             <TabItem Header="Schedules &amp; Backups" DataContext="{Binding Schedules}">
                 <!-- DockPanel, not StackPanel: a StackPanel gives the grid unbounded height, so a long job
                      list grows straight past the bottom of the tab with no scrollbar. -->
-                <DockPanel Margin="12">
-                    <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Margin="0,0,0,10">
+                <DockPanel Margin="{StaticResource PagePadding}">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource CardStacked}">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Back up now" Command="{Binding BackupNowCommand}" Style="{StaticResource AccentButton}" />
                             <Button Content="Restart now (with warnings)" Command="{Binding RestartNowCommand}" />
@@ -461,7 +493,7 @@
                         </StackPanel>
                     </Border>
 
-                    <GroupBox DockPanel.Dock="Top" Header="Add a scheduled job" Margin="0,0,0,10">
+                    <GroupBox DockPanel.Dock="Top" Header="Add a scheduled job" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal">
                             <TextBox Text="{Binding NewJobName}" Width="200" Margin="4" VerticalContentAlignment="Center" />
                             <ComboBox ItemsSource="{Binding JobKinds}" SelectedItem="{Binding NewJobKind}" Width="130" Margin="4" />
@@ -486,109 +518,147 @@
 
             <!-- ===== Settings ===== -->
             <TabItem Header="Settings" DataContext="{Binding Settings}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="16" MaxWidth="720" HorizontalAlignment="Left">
-                        <TextBlock Text="Paths" Style="{StaticResource SectionHeader}" />
-
-                        <TextBlock Text="Run directory (worldserver.exe / .conf)" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseRunDirCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding RunDirectory}" />
+                <!-- The save bar is DOCKED, not the last thing in the scroll: this page is long, and having
+                     to scroll to the bottom to save the field you just edited is a trap. -->
+                <DockPanel Margin="{StaticResource PagePadding}">
+                    <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Margin="0,12,0,0">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Save" Command="{Binding SaveCommand}"
+                                    Style="{StaticResource AccentButton}" Margin="4,0,0,0" />
+                            <Button DockPanel.Dock="Right" Content="Auto-detect paths" Command="{Binding AutoDetectCommand}"
+                                    Style="{StaticResource SubtleButton}" Margin="4,0,0,0" />
+                            <TextBlock Text="{Binding SaveResult}" VerticalAlignment="Center"
+                                       Foreground="{StaticResource AccentBrush}" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" />
                         </DockPanel>
+                    </Border>
 
-                        <TextBlock Text="Source directory (contains modules/)" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseSourceDirCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding SourceDirectory}" />
-                        </DockPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+                        <!-- Each section is a card: these were flat text headers over one long list, so every
+                             field sat at the same visual depth and nothing grouped. -->
+                        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
 
-                        <TextBlock Text="Build directory (CMake)" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBuildDirCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding BuildDirectory}" />
-                        </DockPanel>
+                            <Border Style="{StaticResource CardStacked}">
+                                <StackPanel>
+                                    <TextBlock Text="Paths" Style="{StaticResource CardHeader}" />
 
-                        <TextBlock Text="Build" Style="{StaticResource SectionHeader}" />
+                                    <TextBlock Text="Run directory (worldserver.exe / .conf)" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseRunDirCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding RunDirectory}" />
+                                    </DockPanel>
 
-                        <TextBlock Text="Builds always use the RelWithDebInfo configuration — optimised, but with the debug symbols a crash dump needs."
-                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="2,0,0,8" />
+                                    <TextBlock Text="Source directory (contains modules/)" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseSourceDirCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding SourceDirectory}" />
+                                    </DockPanel>
 
-                        <TextBlock Text="cmake path" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding CMakePath}" />
-                        </DockPanel>
+                                    <TextBlock Text="Build directory (CMake)" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBuildDirCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding BuildDirectory}" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
 
-                        <TextBlock Text="cmake-gui path (optional — found next to cmake by default)" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeGuiCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding CMakeGuiPath}" />
-                        </DockPanel>
+                            <Border Style="{StaticResource CardStacked}">
+                                <StackPanel>
+                                    <TextBlock Text="Build" Style="{StaticResource CardHeader}" />
+                                    <TextBlock Style="{StaticResource Hint}"
+                                               Text="Builds always use the RelWithDebInfo configuration — optimised, but with the debug symbols a crash dump needs." />
 
-                        <CheckBox Content="Review CMake settings before building" IsChecked="{Binding ReviewCMakeBeforeBuild}" Margin="0,4" />
-                        <TextBlock Text="Opens cmake-gui and waits for you to close it, so you can check the options (and re-generate) before the compile starts."
-                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,8" />
+                                    <TextBlock Text="cmake path" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding CMakePath}" />
+                                    </DockPanel>
 
-                        <TextBlock Text="MySQL &amp; Backups" Style="{StaticResource SectionHeader}" />
+                                    <TextBlock Text="cmake-gui path (optional — found next to cmake by default)" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseCMakeGuiCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding CMakeGuiPath}" />
+                                    </DockPanel>
 
-                        <TextBlock Text="MySQL service name (e.g. MySQL80)" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding MySqlServiceName}" Margin="0,0,0,8" />
+                                    <CheckBox Content="Review CMake settings before building" IsChecked="{Binding ReviewCMakeBeforeBuild}" />
+                                    <TextBlock Style="{StaticResource Hint}" Margin="24,4,0,0"
+                                               Text="Opens cmake-gui and waits for you to close it, so you can check the options (and re-generate) before the compile starts." />
+                                </StackPanel>
+                            </Border>
 
-                        <TextBlock Text="Databases (auto-detected from worldserver.conf; defaults shown until detected)" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding DetectedDatabases}" IsReadOnly="True" Margin="0,0,0,8"
-                                 Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Border Style="{StaticResource CardStacked}">
+                                <StackPanel>
+                                    <TextBlock Text="MySQL &amp; backups" Style="{StaticResource CardHeader}" />
 
-                        <TextBlock Text="mysqldump path" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseMysqlDumpCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding MysqlDumpPath}" />
-                        </DockPanel>
+                                    <TextBlock Text="MySQL service name (e.g. MySQL80)" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Text="{Binding MySqlServiceName}" Margin="{StaticResource FieldGap}" />
 
-                        <TextBlock Text="Backup output directory" Style="{StaticResource FieldLabel}" />
-                        <DockPanel Margin="0,0,0,8">
-                            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBackupDirCommand}" Style="{StaticResource SubtleButton}" />
-                            <TextBox Text="{Binding BackupDirectory}" />
-                        </DockPanel>
+                                    <TextBlock Text="Databases (auto-detected from worldserver.conf; defaults shown until detected)" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Text="{Binding DetectedDatabases}" IsReadOnly="True" Margin="{StaticResource FieldGap}"
+                                             Foreground="{StaticResource TextSecondaryBrush}" />
 
-                        <TextBlock Text="Module repositories" Style="{StaticResource SectionHeader}" />
+                                    <TextBlock Text="mysqldump path" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseMysqlDumpCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding MysqlDumpPath}" />
+                                    </DockPanel>
 
-                        <TextBlock Text="Only needed for modules installed without git. Those are identified by matching the folder name against the AzerothCore catalogue, which finds the popular upstream — so pin any fork you run deliberately, or it would be offered a re-clone of the wrong repo."
-                                   Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="2,0,0,8" />
+                                    <TextBlock Text="Backup output directory" Style="{StaticResource FieldLabel}" />
+                                    <DockPanel Margin="{StaticResource FieldGap}">
+                                        <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseBackupDirCommand}" Style="{StaticResource SubtleButton}" />
+                                        <TextBox Text="{Binding BackupDirectory}" />
+                                    </DockPanel>
 
-                        <DataGrid ItemsSource="{Binding ModuleRepoOverrides}" SelectedItem="{Binding SelectedOverride}"
-                                  CanUserAddRows="False" IsReadOnly="False" Height="140" Margin="0,0,0,6">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Module folder" Binding="{Binding Module}" Width="*" />
-                                <DataGridTextColumn Header="Repository (owner/repo or URL)" Binding="{Binding Repository}" Width="2*" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <Button Content="Add" Command="{Binding AddModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
-                            <Button Content="Remove" Command="{Binding RemoveModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
-                            <TextBlock Text="e.g.  mod-challenge-modes  →  poemihai/mod-challenge-modes"
-                                       Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                    <CheckBox Content="Include the server's config folder in backups" IsChecked="{Binding IncludeConfigsInBackup}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStacked}">
+                                <StackPanel>
+                                    <TextBlock Text="Module repositories" Style="{StaticResource CardHeader}" />
+                                    <TextBlock Style="{StaticResource Hint}"
+                                               Text="Only needed for modules installed without git. Those are identified by matching the folder name against the AzerothCore catalogue, which finds the popular upstream — so pin any fork you run deliberately, or it would be offered a re-clone of the wrong repo." />
+
+                                    <DataGrid ItemsSource="{Binding ModuleRepoOverrides}" SelectedItem="{Binding SelectedOverride}"
+                                              CanUserAddRows="False" IsReadOnly="False" Height="140" Margin="0,0,0,8">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Module folder" Binding="{Binding Module}" Width="*" />
+                                            <DataGridTextColumn Header="Repository (owner/repo or URL)" Binding="{Binding Repository}" Width="2*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Add" Command="{Binding AddModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
+                                        <Button Content="Remove" Command="{Binding RemoveModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
+                                        <TextBlock Text="e.g.  mod-challenge-modes  →  poemihai/mod-challenge-modes"
+                                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStacked}">
+                                <StackPanel>
+                                    <TextBlock Text="GitHub &amp; notifications" Style="{StaticResource CardHeader}" />
+
+                                    <TextBlock Text="GitHub token (optional — lifts rate limit / private releases)" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Text="{Binding GitHubToken}" Margin="{StaticResource FieldGap}" />
+
+                                    <TextBlock Text="Discord webhook URL (optional)" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Text="{Binding DiscordWebhookUrl}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Behaviour" Style="{StaticResource CardHeader}" />
+                                    <CheckBox Content="Auto-restart servers on crash" IsChecked="{Binding AutoRestart}" Margin="0,0,0,8" />
+                                    <CheckBox Content="Auto-start servers when app launches" IsChecked="{Binding AutoStartServers}" Margin="0,0,0,8" />
+                                    <CheckBox Content="Launch app on Windows boot" IsChecked="{Binding LaunchOnBoot}" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-
-                        <TextBlock Text="GitHub &amp; Notifications" Style="{StaticResource SectionHeader}" />
-
-                        <TextBlock Text="GitHub token (optional — lifts rate limit / private releases)" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding GitHubToken}" Margin="0,0,0,8" />
-
-                        <TextBlock Text="Discord webhook URL (optional)" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding DiscordWebhookUrl}" Margin="0,0,0,8" />
-
-                        <TextBlock Text="Behaviour" Style="{StaticResource SectionHeader}" />
-                        <CheckBox Content="Auto-restart servers on crash" IsChecked="{Binding AutoRestart}" Margin="0,4" />
-                        <CheckBox Content="Auto-start servers when app launches" IsChecked="{Binding AutoStartServers}" Margin="0,4" />
-                        <CheckBox Content="Launch app on Windows boot" IsChecked="{Binding LaunchOnBoot}" Margin="0,4" />
-
-                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                            <Button Content="Auto-detect paths" Command="{Binding AutoDetectCommand}" />
-                            <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource AccentButton}" />
-                            <TextBlock Text="{Binding SaveResult}" VerticalAlignment="Center" Margin="10,0" Foreground="{StaticResource AccentBrush}" />
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+                </DockPanel>
             </TabItem>
         </TabControl>
     </DockPanel>

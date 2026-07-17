@@ -54,19 +54,20 @@
 
     <sys:Double x:Key="FontSizeNormal">13</sys:Double>
 
+    <!-- ============================= Spacing =============================
+         One scale, used everywhere. Page padding, the gap between stacked cards, and the gap between a field
+         and the next were previously picked ad-hoc per element (4/6/8/10/12/14/16 all appear), which is what
+         makes a layout read as "almost aligned" rather than deliberate. -->
+    <Thickness x:Key="PagePadding">16</Thickness>
+    <Thickness x:Key="CardGap">0,0,0,12</Thickness>
+    <Thickness x:Key="FieldGap">0,0,0,12</Thickness>
+
     <!-- ============================= Base text ============================= -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="{StaticResource FontSizeNormal}" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
-    </Style>
-
-    <Style x:Key="SectionHeader" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
-        <Setter Property="FontSize" Value="14" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Margin" Value="0,10,0,4" />
     </Style>
 
     <Style x:Key="Muted" TargetType="TextBlock">
@@ -83,14 +84,38 @@
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
     </Style>
 
-    <!-- ============================= Card ============================= -->
+    <!-- ============================= Card =============================
+         Margin is 0 by design: a card shouldn't decide how far it sits from its neighbours — its container
+         should, via CardGap. Baking a margin in meant page padding and card margin compounded
+         differently on every tab. -->
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="Padding" Value="18" />
-        <Setter Property="Margin" Value="8" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
+
+    <!-- A card in a vertical stack: carries the standard gap to the next one. -->
+    <Style x:Key="CardStacked" TargetType="Border" BasedOn="{StaticResource Card}">
+        <Setter Property="Margin" Value="{StaticResource CardGap}" />
+    </Style>
+
+    <!-- The heading inside a card. The card's own edge provides the separation from what's above. -->
+    <Style x:Key="CardHeader" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+
+    <!-- Explanatory text under a heading or control. -->
+    <Style x:Key="Hint" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
 
     <!-- ============================= Buttons ============================= -->

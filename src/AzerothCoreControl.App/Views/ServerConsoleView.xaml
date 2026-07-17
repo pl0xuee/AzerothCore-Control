@@ -8,7 +8,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <DockPanel Margin="12">
+    <DockPanel Margin="{StaticResource PagePadding}">
         <!-- Title strip: which server this is, how many lines are buffered, and Clear. -->
         <DockPanel DockPanel.Dock="Top" Margin="2,0,2,8">
             <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -21,7 +21,7 @@
         </DockPanel>
 
         <!-- Command input (worldserver only — authserver ignores stdin). -->
-        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0"
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0"
                    Visibility="{Binding SupportsInput, Converter={StaticResource BoolToVis}}">
             <Button DockPanel.Dock="Right" Content="Send" Command="{Binding SendCommandCommand}"
                     Style="{StaticResource AccentButton}" Margin="4,0,0,0" />
@@ -58,7 +58,7 @@
                         <TextBlock Grid.Column="0" Text="{Binding TimeText}"
                                    FontFamily="Cascadia Mono, Consolas" FontSize="12"
                                    Foreground="{StaticResource TextMutedBrush}"
-                                   Margin="0,0,10,0" VerticalAlignment="Top" />
+                                   Margin="0,0,12,0" VerticalAlignment="Top" />
                         <TextBlock Grid.Column="1" Text="{Binding Text}"
                                    FontFamily="Cascadia Mono, Consolas" FontSize="12"
                                    TextWrapping="Wrap"

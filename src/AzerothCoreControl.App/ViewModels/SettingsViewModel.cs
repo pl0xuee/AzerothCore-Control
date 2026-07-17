@@ -23,6 +23,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string? _mySqlServiceName;
     [ObservableProperty] private string? _mysqlDumpPath;
     [ObservableProperty] private string? _backupDirectory;
+
+    /// <summary>Existed in settings but had no UI, so it could only be changed by editing settings.json.</summary>
+    [ObservableProperty] private bool _includeConfigsInBackup;
     [ObservableProperty] private string? _gitHubToken;
     [ObservableProperty] private string? _discordWebhookUrl;
     [ObservableProperty] private bool _autoRestart;
@@ -56,6 +59,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         MySqlServiceName = s.MySql.ServiceName;
         MysqlDumpPath = s.Backup.MysqlDumpPath;
         BackupDirectory = s.Backup.OutputDirectory;
+        IncludeConfigsInBackup = s.Backup.IncludeConfigs;
         GitHubToken = s.GitHub.Token;
         DiscordWebhookUrl = s.Notifications.DiscordWebhookUrl;
         AutoRestart = s.Watchdog.AutoRestart;
@@ -215,6 +219,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         s.MySql.ServiceName = Blank(MySqlServiceName);
         s.Backup.MysqlDumpPath = MysqlDumpPath ?? "mysqldump";
         s.Backup.OutputDirectory = Blank(BackupDirectory);
+        s.Backup.IncludeConfigs = IncludeConfigsInBackup;
         s.GitHub.Token = Blank(GitHubToken);
         s.Notifications.DiscordWebhookUrl = Blank(DiscordWebhookUrl);
         s.Watchdog.AutoRestart = AutoRestart;
