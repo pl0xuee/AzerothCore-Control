@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:AzerothCoreControl.App.Converters"
-        xmlns:beh="clr-namespace:AzerothCoreControl.App.Behaviors"
+        xmlns:views="clr-namespace:AzerothCoreControl.App.Views"
         Title="AzerothCore Control" Height="740" Width="1060"
         MinHeight="560" MinWidth="880"
         WindowStartupLocation="CenterScreen"
@@ -140,23 +140,15 @@
 
             <!-- ===== Console ===== -->
             <TabItem Header="Console" DataContext="{Binding Console}">
-                <DockPanel Margin="12">
-                    <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                        <Button DockPanel.Dock="Right" Content="Send" Command="{Binding SendCommandCommand}" Style="{StaticResource AccentButton}" />
-                        <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearCommand}" Style="{StaticResource SubtleButton}" />
-                        <TextBox Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
-                                 FontFamily="Cascadia Mono, Consolas" VerticalContentAlignment="Center">
-                            <TextBox.InputBindings>
-                                <KeyBinding Key="Return" Command="{Binding SendCommandCommand}" />
-                            </TextBox.InputBindings>
-                        </TextBox>
-                    </DockPanel>
-                    <ListBox ItemsSource="{Binding Output}" FontFamily="Cascadia Mono, Consolas" FontSize="12"
-                             Foreground="#FFCBD3DC"
-                             beh:AutoScrollBehavior.Enabled="True"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             VirtualizingPanel.IsVirtualizing="True" />
-                </DockPanel>
+                <!-- One pane per server: world and auth output stay in their own scrollback. -->
+                <TabControl>
+                    <TabItem Header="World">
+                        <views:ServerConsoleView DataContext="{Binding World}" />
+                    </TabItem>
+                    <TabItem Header="Auth">
+                        <views:ServerConsoleView DataContext="{Binding Auth}" />
+                    </TabItem>
+                </TabControl>
             </TabItem>
 
             <!-- ===== Modules ===== -->

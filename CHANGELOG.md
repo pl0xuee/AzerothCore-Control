@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-07-16
+
+### Changed
+- **Separate consoles for world and auth** — both servers shared one output list, so world's startup flood
+  buried auth's lines and the `[auth] ` prefix was the only way to tell them apart. The Console tab now has
+  a World and an Auth pane, each with its own scrollback, line count, and Clear button.
+- **Console output is easier to read** — each line now carries an arrival timestamp in a muted gutter and is
+  coloured by severity (amber warnings, red errors, green for commands you typed). Long lines wrap instead
+  of running off a horizontal scrollbar, and rows can be multi-selected and copied.
+- **The command input is world-only** — authserver ignores stdin, so sending it commands was always a no-op.
+
 ## [0.1.7] - 2026-07-16
 
 ### Fixed
