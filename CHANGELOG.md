@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.22] - 2026-07-19
+
+### Added
+- **"Clean rebuild" checkbox** next to Update all + build. Recompiles everything from scratch instead of only
+  what changed — and **your `.conf` files are untouched**, which the label says outright, because "clean"
+  reads as "wipes everything" and configs are the thing people fear losing. The build only ever works inside
+  the build directory; the run directory belongs to the deploy step, which never writes a `.conf` regardless
+  of how the binaries were produced.
+  - It re-runs CMake as well as passing `--clean-first`, and the re-configure is the half that usually
+    matters. AzerothCore collects module sources with a **glob at configure time**, so a module that gained or
+    lost `.cpp` files — after a re-clone, or switching to a fork — leaves the generated build files pointing at
+    the old file list. That compiles and links perfectly while silently omitting the new code, which is far
+    worse than an error. An incremental build cannot notice this on its own.
+  - `--clean-first` alone wouldn't do it: it discards the target's artifacts but leaves the CMake cache, so
+    the stale glob would survive.
+  - Not persisted. It costs a full recompile every run, so it's a per-build decision rather than something to
+    leave on and forget.
+
 ## [0.1.21] - 2026-07-19
 
 ### Added

@@ -44,6 +44,19 @@ public sealed partial class ModulesViewModel : ObservableObject
     /// </remarks>
     [ObservableProperty] private bool _replaceUnpullable;
 
+    /// <summary>
+    /// Rebuild everything from scratch, re-running CMake first, instead of compiling only what changed.
+    /// </summary>
+    /// <remarks>
+    /// Needed when a module gained or lost source files — AzerothCore globs them at configure time, so an
+    /// incremental build keeps using the old file list and silently omits new code rather than erroring.
+    /// <para>
+    /// Not persisted: it costs a full recompile every run, which is a price to opt into per build rather than
+    /// forget about. It has no bearing on configs — the deploy step never writes a .conf regardless.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty] private bool _cleanBuild;
+
     public ObservableCollection<ModuleRowViewModel> Modules { get; } = new();
 
     /// <summary>Compiler output from the last failed "Update all" — one build covers every module.</summary>
@@ -157,7 +170,11 @@ public sealed partial class ModulesViewModel : ObservableObject
             (skipped > 0 ? $"{skipped} ZIP-installed module(s) will be skipped — they have no remote to pull from.\n\n" : "") +
             "Running servers will be shut down gracefully and restarted afterwards.\n\n" +
             stuckPolicy +
-            "The rebuild can take a long while.",
+            (CleanBuild
+                ? "Everything will be recompiled from scratch after re-running CMake — considerably slower " +
+                  "than the usual incremental build.\n\nYour .conf files are not affected: only build " +
+                  "artifacts are discarded, and deploying never overwrites a .conf."
+                : "The rebuild can take a long while."),
             ReplaceUnpullable ? "Update all modules, replacing stuck ones" : "Update all modules and build",
             System.Windows.MessageBoxButton.YesNo,
             ReplaceUnpullable ? System.Windows.MessageBoxImage.Warning : System.Windows.MessageBoxImage.Question);
@@ -187,7 +204,8 @@ public sealed partial class ModulesViewModel : ObservableObject
 
             var paths = updatable.Select(m => m.Model.Path).ToList();
             var report = await _coordinator.Orchestrator
-                .RunAsync(paths, rebuild: true, progress, replaceUnpullable: ReplaceUnpullable)
+                .RunAsync(paths, rebuild: true, progress,
+                    replaceUnpullable: ReplaceUnpullable, cleanBuild: CleanBuild)
                 .ConfigureAwait(true);
 
             // A ZIP-installed module is excluded from the pulls but STILL COMPILED — so it can break the build

@@ -140,7 +140,13 @@
                                  someone's local edits weeks after they forgot ticking it. -->
                             <CheckBox Content="Replace modules that won't pull with the latest (keeps a backup)"
                                       IsChecked="{Binding ReplaceUnpullable}" Margin="4,8,0,0"
-                                      ToolTip="For a module stuck on old code by local edits or a diverged history. Its folder is moved to module-backups/ and re-cloned from its remote, so local edits and commits no longer apply." />
+                                      ToolTip="For a module stuck on old code by local edits or a diverged history. Its folder is moved to module-backups/ and re-cloned from its remote, so local edits and commits no longer apply. Never triggered by a network or authentication failure." />
+
+                            <!-- Says what it does NOT touch: "clean" reads as "wipes everything", and the one
+                                 thing users fear losing is the .conf files they hand-edited. -->
+                            <CheckBox Content="Clean rebuild — recompile everything (your .conf files are untouched)"
+                                      IsChecked="{Binding CleanBuild}" Margin="4,8,0,0"
+                                      ToolTip="Re-runs CMake and rebuilds from scratch instead of compiling only what changed. Needed when a module gained or lost source files, since AzerothCore collects them at configure time. Only build artifacts are discarded — the run directory and your .conf files are not involved." />
 
                             <TextBlock Text="{Binding Status}" Margin="4,8,0,0" Style="{StaticResource Muted}" />
 

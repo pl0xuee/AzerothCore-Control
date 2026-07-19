@@ -89,6 +89,11 @@ public sealed class UpdateOrchestrator
     /// <param name="modulePaths">Module working directories to update.</param>
     /// <param name="rebuild">Recompile after pulling (requires build tools + build dir).</param>
     /// <param name="progress">Streamed step-by-step progress.</param>
+    /// <param name="cleanBuild">
+    /// Rebuild from scratch and re-run CMake first, instead of compiling incrementally. Slow, but the only way
+    /// to pick up module source files that were added or removed. Affects the build only — deploy still never
+    /// overwrites a .conf.
+    /// </param>
     /// <param name="replaceUnpullable">
     /// Re-clone any module whose pull is refused, replacing it with the remote's latest. DESTRUCTIVE — local
     /// edits and local commits are moved to a backup folder and no longer apply. Only pass this when the user
@@ -99,7 +104,8 @@ public sealed class UpdateOrchestrator
         bool rebuild,
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellationToken = default,
-        bool replaceUnpullable = false)
+        bool replaceUnpullable = false,
+        bool cleanBuild = false)
     {
         if (modulePaths.Count == 0)
             return new UpdateReport(false, "No modules selected to update.");
@@ -244,8 +250,12 @@ public sealed class UpdateOrchestrator
                 // stop the servers before anything overwrites the binaries they're running from.
                 await EnsureStoppedAsync().ConfigureAwait(false);
 
-                Report(progress, UpdateStep.Build, "Recompiling (this can take a while)...");
-                var build = await _build.BuildAsync(line => Report(progress, UpdateStep.Build, line), cancellationToken).ConfigureAwait(false);
+                Report(progress, UpdateStep.Build, cleanBuild
+                    ? "Rebuilding everything from scratch (this takes considerably longer than an incremental build)..."
+                    : "Recompiling (this can take a while)...");
+                var build = await _build
+                    .BuildAsync(line => Report(progress, UpdateStep.Build, line), cancellationToken, clean: cleanBuild)
+                    .ConfigureAwait(false);
                 if (!build.Success || build.BinaryOutputDir == null)
                 {
                     // Nothing was deployed, so the installed binaries are still the ones that worked.
