@@ -95,6 +95,47 @@ public sealed class ModuleUpdater
     }
 
     /// <summary>
+    /// Force a module onto its remote's latest code by re-cloning it, for when a pull can't get there.
+    /// </summary>
+    /// <remarks>
+    /// A fast-forward pull refuses on a dirty tree or a diverged history, which leaves the module stuck on old
+    /// code indefinitely — and if that old code doesn't compile, it blocks every other module too, since
+    /// AzerothCore builds them all into one target.
+    /// <para>
+    /// This is deliberately destructive and must only run when the user has asked for it: local edits and
+    /// local commits do not survive. They are not deleted, though — <see cref="Reclone"/> moves the whole
+    /// folder into <c>module-backups/</c> first, so the old state is recoverable.
+    /// </para>
+    /// <para>
+    /// The remote comes from the checkout itself, so this replaces the module with the latest of whatever it
+    /// currently follows — repoint it first if that isn't the repo you want.
+    /// </para>
+    /// </remarks>
+    public RecloneResult ForceReplace(string modulePath)
+    {
+        var name = Path.GetFileName(modulePath);
+        if (!Repository.IsValid(modulePath))
+            return new RecloneResult(false, $"{name} is not a git repository — nothing to read a remote from.");
+
+        string? url;
+        try
+        {
+            using var repo = new Repository(modulePath);
+            url = (repo.Network.Remotes["origin"] ?? repo.Network.Remotes.FirstOrDefault())?.Url;
+        }
+        catch (LibGit2SharpException ex)
+        {
+            return new RecloneResult(false, $"Could not read {name}'s remote: {ex.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(url))
+            return new RecloneResult(false, $"{name} has no remote to re-clone from.");
+
+        _log.LogInformation("Force-replacing {Module} from {Url}", name, url);
+        return Reclone(modulePath, url!, replaceGitRepo: true);
+    }
+
+    /// <summary>
     /// Point an existing checkout's <c>origin</c> at <paramref name="cloneUrl"/> and fetch, so update checks
     /// and pulls follow the repo the user pinned rather than whatever it was originally cloned from.
     /// </summary>

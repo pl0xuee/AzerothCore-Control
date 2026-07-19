@@ -222,3 +222,107 @@ public class RemoteMismatchTests
         Assert.NotNull(result);
     }
 }
+
+/// <summary>
+/// Force-replace exists for a module stuck on old code that a pull cannot reach. It is destructive by design,
+/// so these tests are about it staying recoverable and never running uninvited.
+/// </summary>
+public class ModuleForceReplaceTests : IDisposable
+{
+    private readonly string _root;
+    private readonly ModuleUpdater _updater;
+
+    private string ModulesDir => Path.Combine(_root, "modules");
+
+    public ModuleForceReplaceTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), "acc-force-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ModulesDir);
+        _updater = new ModuleUpdater(() => new AppSettings());
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private static readonly Signature Sig = new("t", "t@t", DateTimeOffset.FromUnixTimeSeconds(1700000000));
+
+    private string CreateUpstream(string content)
+    {
+        var path = Path.Combine(_root, "upstream");
+        Directory.CreateDirectory(path);
+        Repository.Init(path);
+        File.WriteAllText(Path.Combine(path, "ChallengeModes.cpp"), content);
+        using var repo = new Repository(path);
+        Commands.Stage(repo, "*");
+        repo.Commit("init", Sig, Sig, new CommitOptions());
+        return path;
+    }
+
+    [Fact]
+    public void ADirtyModule_IsReplacedWithTheRemotesLatest()
+    {
+        // The case that motivated this: a module a pull refuses, stuck on code that no longer compiles, and
+        // therefore blocking every other module in the shared build target.
+        var upstream = CreateUpstream("the fixed code");
+        var module = Path.Combine(ModulesDir, "mod-challenge-modes");
+        Repository.Clone(upstream, module);
+        File.WriteAllText(Path.Combine(module, "ChallengeModes.cpp"), "the old broken code");
+
+        Assert.False(_updater.Pull(module).Success);   // a pull cannot get there
+
+        var result = _updater.ForceReplace(module);
+
+        Assert.True(result.Success);
+        Assert.Equal("the fixed code", File.ReadAllText(Path.Combine(module, "ChallengeModes.cpp")));
+    }
+
+    [Fact]
+    public void TheReplacedFolder_IsKeptAsABackup()
+    {
+        // Destructive is acceptable only because it is recoverable — the user's edits must still exist
+        // somewhere afterwards.
+        var upstream = CreateUpstream("the fixed code");
+        var module = Path.Combine(ModulesDir, "mod-challenge-modes");
+        Repository.Clone(upstream, module);
+        File.WriteAllText(Path.Combine(module, "my-notes.txt"), "hours of local work");
+
+        var result = _updater.ForceReplace(module);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.BackupPath);
+        Assert.Equal("hours of local work", File.ReadAllText(Path.Combine(result.BackupPath!, "my-notes.txt")));
+        // And the backup lives outside modules/, or CMake would try to build it as a second copy.
+        Assert.DoesNotContain(ModulesDir, result.BackupPath!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AModuleWithNoRemote_IsRefusedRatherThanEmptied()
+    {
+        // Nothing to re-clone from. Moving the folder aside anyway would destroy it for no gain.
+        var module = Path.Combine(ModulesDir, "mod-local-only");
+        Directory.CreateDirectory(module);
+        Repository.Init(module);
+        File.WriteAllText(Path.Combine(module, "keep.txt"), "irreplaceable");
+
+        var result = _updater.ForceReplace(module);
+
+        Assert.False(result.Success);
+        Assert.Contains("no remote", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("irreplaceable", File.ReadAllText(Path.Combine(module, "keep.txt")));
+    }
+
+    [Fact]
+    public void ANonGitFolder_IsRefused()
+    {
+        var folder = Path.Combine(ModulesDir, "mod-zipped");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "keep.txt"), "irreplaceable");
+
+        var result = _updater.ForceReplace(folder);
+
+        Assert.False(result.Success);
+        Assert.Equal("irreplaceable", File.ReadAllText(Path.Combine(folder, "keep.txt")));
+    }
+}

@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.19] - 2026-07-19
+
+### Added
+- **"Replace modules that won't pull with the latest"** — a checkbox next to Update all + build, for a module
+  stuck on old code that a pull can't reach.
+  - A fast-forward pull refuses on a dirty tree or a diverged history, which is correct but leaves that module
+    on its old code indefinitely. If the old code doesn't compile, it blocks *every* module, since AzerothCore
+    builds them all into one target. There was no way out of that from inside the app.
+  - When ticked, a refused pull re-clones the module from its own remote instead of skipping it. The existing
+    folder is moved to `module-backups/` first, so local edits and commits are recoverable — but they no
+    longer apply, and the confirmation says so in those words, with a warning icon rather than a question mark.
+  - Off by default and deliberately **not** remembered between runs. A destructive option that quietly stays
+    on would discard someone's work weeks after they forgot ticking it.
+  - A module with no remote, or no git checkout at all, is refused rather than emptied — there'd be nothing to
+    re-clone from, and moving the folder aside would destroy it for no gain.
+
 ## [0.1.18] - 2026-07-19
 
 ### Fixed

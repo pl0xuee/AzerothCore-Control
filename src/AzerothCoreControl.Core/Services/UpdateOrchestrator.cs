@@ -89,11 +89,17 @@ public sealed class UpdateOrchestrator
     /// <param name="modulePaths">Module working directories to update.</param>
     /// <param name="rebuild">Recompile after pulling (requires build tools + build dir).</param>
     /// <param name="progress">Streamed step-by-step progress.</param>
+    /// <param name="replaceUnpullable">
+    /// Re-clone any module whose pull is refused, replacing it with the remote's latest. DESTRUCTIVE — local
+    /// edits and local commits are moved to a backup folder and no longer apply. Only pass this when the user
+    /// has explicitly asked for it: without it a stuck module simply stays on its old code.
+    /// </param>
     public async Task<UpdateReport> RunAsync(
         IReadOnlyList<string> modulePaths,
         bool rebuild,
         IProgress<UpdateProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool replaceUnpullable = false)
     {
         if (modulePaths.Count == 0)
             return new UpdateReport(false, "No modules selected to update.");
@@ -183,6 +189,26 @@ public sealed class UpdateOrchestrator
                 Report(progress, UpdateStep.Pull, $"Pulling {name}...");
 
                 var pull = _moduleUpdater.Pull(path);
+
+                // A refused pull leaves the module on old code forever. When the user has asked for it,
+                // replace the folder outright with the remote's latest — the only way past a dirty tree or a
+                // diverged history, and the old folder is kept as a backup.
+                if (!pull.Success && replaceUnpullable)
+                {
+                    Report(progress, UpdateStep.Pull, $"{name}: {pull.Message} Replacing with the latest...");
+                    var replaced = _moduleUpdater.ForceReplace(path);
+                    pulls.Add(new ModulePullOutcome(name, replaced.Success, replaced.Message));
+                    Report(progress, UpdateStep.Pull, $"{name}: {replaced.Message}");
+                    if (replaced.Success)
+                    {
+                        // The whole tree was swapped, so assume the worst on both counts rather than diffing
+                        // a history that no longer relates to what was there.
+                        rebuildRecommended = true;
+                        sqlChanged = true;
+                    }
+                    continue;
+                }
+
                 pulls.Add(new ModulePullOutcome(name, pull.Success, pull.Message));
                 // Prefix the name: in a twenty-module run, a bare "Already up to date." says nothing about who.
                 Report(progress, UpdateStep.Pull, $"{name}: {pull.Message}");

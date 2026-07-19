@@ -34,6 +34,16 @@ public sealed partial class ModulesViewModel : ObservableObject
 
     [ObservableProperty] private bool _batchFailed;
 
+    /// <summary>
+    /// Replace modules whose pull is refused with the remote's latest, instead of leaving them behind.
+    /// </summary>
+    /// <remarks>
+    /// Off by default and deliberately not remembered between runs. It discards local edits and commits (to a
+    /// backup folder), so it should be a decision the user makes for a specific run — not a setting that
+    /// quietly stays on and eats their work three weeks later.
+    /// </remarks>
+    [ObservableProperty] private bool _replaceUnpullable;
+
     public ObservableCollection<ModuleRowViewModel> Modules { get; } = new();
 
     /// <summary>Compiler output from the last failed "Update all" — one build covers every module.</summary>
@@ -134,15 +144,23 @@ public sealed partial class ModulesViewModel : ObservableObject
             return;
         }
 
+        // The destructive option gets its own sentence and its own warning icon — it must never read as a
+        // detail of an otherwise routine update.
+        var stuckPolicy = ReplaceUnpullable
+            ? "Any module that WON'T pull (local edits, diverged history) will be REPLACED with the latest " +
+              "from its remote. Its current folder is moved to module-backups/ — your local edits and commits " +
+              "will only exist there afterwards.\n\n"
+            : "A module with local edits is left at its current commit rather than aborting the run.\n\n";
+
         var answer = System.Windows.MessageBox.Show(
             $"Pull {updatable.Count} modules, then rebuild and deploy?\n\n" +
             (skipped > 0 ? $"{skipped} ZIP-installed module(s) will be skipped — they have no remote to pull from.\n\n" : "") +
-            "Running servers will be shut down gracefully and restarted afterwards. A module with local edits " +
-            "is left at its current commit rather than aborting the run.\n\n" +
+            "Running servers will be shut down gracefully and restarted afterwards.\n\n" +
+            stuckPolicy +
             "The rebuild can take a long while.",
-            "Update all modules and build",
+            ReplaceUnpullable ? "Update all modules, replacing stuck ones" : "Update all modules and build",
             System.Windows.MessageBoxButton.YesNo,
-            System.Windows.MessageBoxImage.Question);
+            ReplaceUnpullable ? System.Windows.MessageBoxImage.Warning : System.Windows.MessageBoxImage.Question);
         if (answer != System.Windows.MessageBoxResult.Yes)
             return;
 
@@ -169,7 +187,7 @@ public sealed partial class ModulesViewModel : ObservableObject
 
             var paths = updatable.Select(m => m.Model.Path).ToList();
             var report = await _coordinator.Orchestrator
-                .RunAsync(paths, rebuild: true, progress)
+                .RunAsync(paths, rebuild: true, progress, replaceUnpullable: ReplaceUnpullable)
                 .ConfigureAwait(true);
 
             BatchStatus = report.Message;

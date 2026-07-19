@@ -143,6 +143,54 @@ public class UpdateOrchestratorTests
     }
 
     [Fact]
+    public async Task AStuckModule_IsNotReplacedUnlessAskedFor()
+    {
+        // The safety property that matters most: replacing discards local work, so the default path must never
+        // do it on its own initiative no matter how stuck the module is.
+        var h = Create();
+        var (root, module) = AGitRepo();
+        try
+        {
+            File.WriteAllText(Path.Combine(module, "my-edit.txt"), "hours of local work");
+
+            await h.Orchestrator.RunAsync(new[] { module }, rebuild: true);
+
+            Assert.Equal("hours of local work", File.ReadAllText(Path.Combine(module, "my-edit.txt")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task WhenAskedFor_AStuckModuleIsReplacedAndTheRunContinues()
+    {
+        // A module a pull refuses stays on old code forever otherwise -- and if that code does not compile it
+        // blocks every other module, since AzerothCore builds them all into one target.
+        var h = Create();
+        var (root, module) = AGitRepo();
+        try
+        {
+            // An untracked file alone is not dirty enough to refuse a pull; overwrite a tracked one.
+            File.WriteAllText(Path.Combine(module, "README.md"), "local divergence");
+            Assert.False(new ModuleUpdater(() => new AppSettings()).Pull(module).Success);
+
+            var report = await h.Orchestrator.RunAsync(
+                new[] { module }, rebuild: true, replaceUnpullable: true);
+
+            var outcome = Assert.Single(report.Pulls);
+            Assert.True(outcome.Success);
+            // Replaced with the remote's content, not left on the local edit.
+            Assert.Equal("module", File.ReadAllText(Path.Combine(module, "README.md")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public async Task WhenOnlyAuthWasRunning_ItIsBroughtBackUp()
     {
         // Regression: the shutdown stopped BOTH servers if EITHER was running, but the restart only keyed off

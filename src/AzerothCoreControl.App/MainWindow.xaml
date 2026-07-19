@@ -135,6 +135,13 @@
                                 <Button Content="Update all + build" Command="{Binding UpdateAllAndBuildCommand}"
                                         Style="{StaticResource AccentButton}" Margin="8,0,0,0" />
                             </StackPanel>
+                            <!-- Opt-in and destructive, so it sits next to the button that acts on it and says
+                                 what it costs. Not persisted: a setting that quietly stays on would discard
+                                 someone's local edits weeks after they forgot ticking it. -->
+                            <CheckBox Content="Replace modules that won't pull with the latest (keeps a backup)"
+                                      IsChecked="{Binding ReplaceUnpullable}" Margin="4,8,0,0"
+                                      ToolTip="For a module stuck on old code by local edits or a diverged history. Its folder is moved to module-backups/ and re-cloned from its remote, so local edits and commits no longer apply." />
+
                             <TextBlock Text="{Binding Status}" Margin="4,8,0,0" Style="{StaticResource Muted}" />
 
                             <!-- Batch progress: its own line so a long "update all" doesn't overwrite the
