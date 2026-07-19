@@ -24,6 +24,8 @@ public class UpdateOrchestratorTests
             RunDirectory = Path.GetTempPath(),
         };
         settings.Backup.BackupBeforeUpdate = false; // not what these tests are about
+        // On by default, and it blocks on a cmake-gui window the test environment has no one to close.
+        settings.Build.ReviewCMakeBeforeBuild = false;
         settings.Watchdog.InitialBackoff = TimeSpan.Zero;
         settings.Watchdog.MaxBackoff = TimeSpan.Zero;
 
@@ -49,6 +51,96 @@ public class UpdateOrchestratorTests
 
     /// <summary>A path that is not a git repo, so the Pull step fails early and deterministically.</summary>
     private static string NotAGitRepo() => Path.Combine(Path.GetTempPath(), "acc-not-a-repo-" + Guid.NewGuid().ToString("N"));
+
+    /// <summary>
+    /// A checkout whose pull succeeds as "already up to date". It is cloned from a local upstream rather than
+    /// merely init'd: a repo with no remote has nothing to pull from, and LibGit2Sharp treats that as an error.
+    /// </summary>
+    /// <returns>The root to delete, and the module checkout inside it.</returns>
+    private static (string Root, string Module) AGitRepo()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "acc-repo-" + Guid.NewGuid().ToString("N"));
+        var upstream = Path.Combine(root, "upstream");
+        Directory.CreateDirectory(upstream);
+
+        LibGit2Sharp.Repository.Init(upstream);
+        File.WriteAllText(Path.Combine(upstream, "README.md"), "module");
+        using (var repo = new LibGit2Sharp.Repository(upstream))
+        {
+            LibGit2Sharp.Commands.Stage(repo, "*");
+            var sig = new LibGit2Sharp.Signature("t", "t@t", DateTimeOffset.Now);
+            repo.Commit("init", sig, sig, new LibGit2Sharp.CommitOptions());
+        }
+
+        var module = Path.Combine(root, "mod-good");
+        LibGit2Sharp.Repository.Clone(upstream, module);
+        return (root, module);
+    }
+
+    [Fact]
+    public async Task WithNoModules_NothingHappens()
+    {
+        var h = Create();
+
+        var report = await h.Orchestrator.RunAsync(Array.Empty<string>(), rebuild: true);
+
+        Assert.False(report.Success);
+        Assert.Empty(report.Pulls);
+        Assert.Equal(0, h.WorldLauncher.LaunchCount);
+    }
+
+    [Fact]
+    public async Task EveryModuleIsPulled_AndReportedIndividually()
+    {
+        // The batch must not stop at the first module: with twenty installed, the user needs to know which
+        // ones moved and which didn't, not just that "an update failed".
+        var h = Create();
+        var a = NotAGitRepo();
+        var b = NotAGitRepo();
+
+        var report = await h.Orchestrator.RunAsync(new[] { a, b }, rebuild: true);
+
+        Assert.Equal(2, report.Pulls.Count);
+        Assert.Equal(Path.GetFileName(a), report.Pulls[0].Name);
+        Assert.Equal(Path.GetFileName(b), report.Pulls[1].Name);
+        Assert.All(report.Pulls, p => Assert.False(p.Success));
+    }
+
+    [Fact]
+    public async Task WhenEveryPullFails_TheBuildIsSkipped()
+    {
+        // Nothing pulled cleanly, so the tree on disk is exactly what is already installed — spending twenty
+        // minutes recompiling it would be pure waste.
+        var h = Create();
+
+        var report = await h.Orchestrator.RunAsync(new[] { NotAGitRepo(), NotAGitRepo() }, rebuild: true);
+
+        Assert.False(report.Success);
+        Assert.Contains("nothing to build", report.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OneBadModule_DoesNotBlockTheRest()
+    {
+        // Regression guard for the whole point of the batch: a single module with local edits must not stop
+        // the other nineteen from being updated and built.
+        var h = Create();
+        var (root, good) = AGitRepo();
+        try
+        {
+            var report = await h.Orchestrator.RunAsync(new[] { NotAGitRepo(), good }, rebuild: true);
+
+            // It reached the build step (which fails here — there is no cmake in the test environment), rather
+            // than giving up at the first failed pull.
+            Assert.Equal(2, report.Pulls.Count);
+            Assert.True(report.Pulls[1].Success);
+            Assert.DoesNotContain("nothing to build", report.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
 
     [Fact]
     public async Task WhenOnlyAuthWasRunning_ItIsBroughtBackUp()

@@ -8,7 +8,18 @@ public enum UpdateStep { Warn, Backup, Pull, Build, Deploy, Restart }
 
 public sealed record UpdateProgress(UpdateStep Step, string Message, bool IsError = false);
 
-public sealed record UpdateReport(bool Success, string Message, DeployResult? Deploy = null);
+/// <summary>How one module fared in the pull step of a batch update.</summary>
+public sealed record ModulePullOutcome(string Name, bool Success, string Message);
+
+public sealed record UpdateReport(
+    bool Success,
+    string Message,
+    DeployResult? Deploy = null,
+    IReadOnlyList<ModulePullOutcome>? Pulls = null)
+{
+    /// <summary>Per-module pull results, in the order they were attempted. Empty if we never got that far.</summary>
+    public IReadOnlyList<ModulePullOutcome> Pulls { get; init; } = Pulls ?? Array.Empty<ModulePullOutcome>();
+}
 
 /// <summary>
 /// Sequences a safe end-to-end module update:
@@ -53,12 +64,40 @@ public sealed class UpdateOrchestrator
     /// <param name="modulePath">Module working directory to update.</param>
     /// <param name="rebuild">Recompile after pulling (requires build tools + build dir).</param>
     /// <param name="progress">Streamed step-by-step progress.</param>
-    public async Task<UpdateReport> RunAsync(
+    public Task<UpdateReport> RunAsync(
         string modulePath,
         bool rebuild,
         IProgress<UpdateProgress>? progress = null,
         CancellationToken cancellationToken = default)
+        => RunAsync(new[] { modulePath }, rebuild, progress, cancellationToken);
+
+    /// <summary>
+    /// Update several modules as ONE operation: pull them all, then a single build → deploy → restart.
+    /// </summary>
+    /// <remarks>
+    /// Running the single-module sequence once per module would be quadratically wasteful and unsafe: every
+    /// module would trigger its own database backup, its own full recompile (AzerothCore builds all modules
+    /// into one target regardless), and its own server bounce. Pulling everything first and compiling once is
+    /// both far quicker and closer to what the user means by "update all".
+    /// <para>
+    /// A module whose pull fails does NOT abort the run — it simply stays at its current commit, which is a
+    /// perfectly buildable state. With twenty modules installed, one with local edits shouldn't block the
+    /// other nineteen. The run is only abandoned if EVERY pull failed, since then there is nothing new to
+    /// build.
+    /// </para>
+    /// </remarks>
+    /// <param name="modulePaths">Module working directories to update.</param>
+    /// <param name="rebuild">Recompile after pulling (requires build tools + build dir).</param>
+    /// <param name="progress">Streamed step-by-step progress.</param>
+    public async Task<UpdateReport> RunAsync(
+        IReadOnlyList<string> modulePaths,
+        bool rebuild,
+        IProgress<UpdateProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
+        if (modulePaths.Count == 0)
+            return new UpdateReport(false, "No modules selected to update.");
+
         var s = _settings();
         var runDir = s.DeployDirectory ?? s.RunDirectory;
 
@@ -106,12 +145,16 @@ public sealed class UpdateOrchestrator
                 _world.Start(Path.Combine(runDir!, ServerKind.World.ExecutableName()), workingDirectory: runDir);
         }
 
+        // Filled by the pull step; declared out here so the failure paths can still report which modules had
+        // already been pulled by the time a later step (build, deploy) gave up.
+        var pulls = new List<ModulePullOutcome>(modulePaths.Count);
+
         // A step that failed BEFORE any binary was touched leaves the installed server perfectly runnable —
         // so put it back up rather than leaving the realm down until someone notices the red text.
         UpdateReport FailAndRestore(UpdateStep step, string message)
         {
             RestartIfWeStopped();
-            return Fail(progress, step, message);
+            return Fail(progress, step, message) with { Pulls = pulls };
         }
 
         try
@@ -129,18 +172,42 @@ public sealed class UpdateOrchestrator
                     return FailAndRestore(UpdateStep.Backup, backup.Message);
             }
 
-            // 3. Pull the module.
-            Report(progress, UpdateStep.Pull, $"Pulling {Path.GetFileName(modulePath)}...");
-            var pull = _moduleUpdater.Pull(modulePath);
-            if (!pull.Success)
-                return FailAndRestore(UpdateStep.Pull, pull.Message);
-            Report(progress, UpdateStep.Pull, pull.Message);
-            if (pull.SqlChanged)
+            // 3. Pull every module. One module's failure is not the batch's failure — see the remarks above.
+            var rebuildRecommended = false;
+            var sqlChanged = false;
+
+            foreach (var path in modulePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var name = Path.GetFileName(path);
+                Report(progress, UpdateStep.Pull, $"Pulling {name}...");
+
+                var pull = _moduleUpdater.Pull(path);
+                pulls.Add(new ModulePullOutcome(name, pull.Success, pull.Message));
+                // Prefix the name: in a twenty-module run, a bare "Already up to date." says nothing about who.
+                Report(progress, UpdateStep.Pull, $"{name}: {pull.Message}");
+
+                if (!pull.Success)
+                    continue;
+                rebuildRecommended |= pull.RebuildRecommended;
+                sqlChanged |= pull.SqlChanged;
+            }
+
+            var failedPulls = pulls.Where(p => !p.Success).ToList();
+            // Nothing pulled cleanly, so there is nothing new to compile — don't spend twenty minutes
+            // rebuilding the exact tree that is already installed.
+            if (failedPulls.Count == pulls.Count)
+                return FailAndRestore(UpdateStep.Pull, pulls.Count == 1
+                    ? failedPulls[0].Message
+                    : $"All {pulls.Count} modules failed to pull — nothing to build.");
+
+            if (sqlChanged)
                 Report(progress, UpdateStep.Pull, "Note: module SQL changed — enable DB auto-update or apply it before the next boot.");
 
-            // 4. Rebuild if requested / recommended.
+            // 4. Rebuild if requested / recommended. One build covers every module: AzerothCore compiles them
+            // all into a single target, so this is the same work whether one module changed or twenty.
             DeployResult? deployResult = null;
-            if (rebuild || pull.RebuildRecommended)
+            if (rebuild || rebuildRecommended)
             {
                 // The pull may have just told us a rebuild is needed when the caller didn't ask for one —
                 // stop the servers before anything overwrites the binaries they're running from.
@@ -167,16 +234,23 @@ public sealed class UpdateOrchestrator
             // 6. Bring the servers back up, now running the new binaries.
             RestartIfWeStopped();
 
-            return new UpdateReport(true, "Update complete.", deployResult);
+            // A partial batch still succeeded — but say so plainly rather than reporting a bare
+            // "Update complete." over modules that were left behind.
+            var message = failedPulls.Count == 0
+                ? pulls.Count == 1 ? "Update complete." : $"Update complete — {pulls.Count} modules."
+                : $"Update complete for {pulls.Count - failedPulls.Count} of {pulls.Count} modules; " +
+                  $"{failedPulls.Count} could not be pulled ({string.Join(", ", failedPulls.Select(p => p.Name))}).";
+
+            return new UpdateReport(true, message, deployResult, pulls);
         }
         catch (OperationCanceledException)
         {
-            return Fail(progress, UpdateStep.Restart, "Update cancelled.");
+            return Fail(progress, UpdateStep.Restart, "Update cancelled.") with { Pulls = pulls };
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Update failed for {Module}", modulePath);
-            return new UpdateReport(false, ex.Message);
+            _log.LogError(ex, "Update failed for {Modules}", string.Join(", ", modulePaths.Select(Path.GetFileName)));
+            return new UpdateReport(false, ex.Message, Pulls: pulls);
         }
     }
 

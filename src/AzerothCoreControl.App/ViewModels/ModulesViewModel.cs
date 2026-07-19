@@ -12,19 +12,46 @@ public sealed partial class ModulesViewModel : ObservableObject
 {
     private readonly ServerCoordinator _coordinator;
 
+    [NotifyPropertyChangedFor(nameof(CanRunBatch))]
+    [NotifyCanExecuteChangedFor(nameof(UpdateAllAndBuildCommand))]
     [ObservableProperty] private bool _isChecking;
+
     [ObservableProperty] private string _status = "Not checked yet.";
     [ObservableProperty] private ModuleRowViewModel? _selectedModule;
 
+    // Both commands walk every module, so neither may run while the other is — a re-check rebuilds the very
+    // rows the batch is updating, and a batch pulls the trees the check is reading.
+    [NotifyPropertyChangedFor(nameof(CanRunBatch))]
+    [NotifyCanExecuteChangedFor(nameof(UpdateAllAndBuildCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CheckModulesCommand))]
+    [ObservableProperty] private bool _isUpdatingAll;
+
+    /// <summary>
+    /// Live step-by-step text for the batch, kept apart from <see cref="Status"/> so the check summary
+    /// survives. Null until a batch has run — the line is hidden rather than blank.
+    /// </summary>
+    [ObservableProperty] private string? _batchStatus;
+
+    [ObservableProperty] private bool _batchFailed;
+
     public ObservableCollection<ModuleRowViewModel> Modules { get; } = new();
 
-    public ModulesViewModel(ServerCoordinator coordinator) => _coordinator = coordinator;
+    /// <summary>Compiler output from the last failed "Update all" — one build covers every module.</summary>
+    public BuildReportViewModel BatchReport { get; }
+
+    public bool CanRunBatch => !IsUpdatingAll && !IsChecking;
+
+    public ModulesViewModel(ServerCoordinator coordinator)
+    {
+        _coordinator = coordinator;
+        BatchReport = new BuildReportViewModel(() => "All modules");
+    }
 
     /// <summary>Re-scan all modules against their GitHub remotes.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRunBatch))]
     private async Task CheckModulesAsync()
     {
-        if (IsChecking) return;
+        if (IsChecking || IsUpdatingAll) return;
         IsChecking = true;
         Status = "Checking modules…";
         try
@@ -74,6 +101,110 @@ public sealed partial class ModulesViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Pull every git-backed module, then compile and deploy ONCE.
+    /// </summary>
+    /// <remarks>
+    /// The per-row "Pull + Build" is fine for one module but wrong to repeat: each run takes the servers down,
+    /// backs up the databases and recompiles the whole tree, so updating twenty modules that way means twenty
+    /// full rebuilds of code that is compiled into a single target anyway. This does the pulls first and pays
+    /// for the build once — which also means the cmake review window (on by default) opens once, not per
+    /// module.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanRunBatch))]
+    private async Task UpdateAllAndBuildAsync()
+    {
+        if (IsUpdatingAll || IsChecking) return;
+
+        // "Update all" over a stale list would silently skip modules found since the last check.
+        if (Modules.Count == 0)
+        {
+            await CheckModulesAsync().ConfigureAwait(true);
+            if (Modules.Count == 0)
+                return;
+        }
+
+        // A ZIP-installed folder has no remote to pull from; it would only contribute a failure row.
+        var updatable = Modules.Where(m => m.Model.IsGitRepo).ToList();
+        var skipped = Modules.Count - updatable.Count;
+        if (updatable.Count == 0)
+        {
+            BatchStatus = "No git-backed modules to update — use Re-clone to convert a ZIP install first.";
+            BatchFailed = true;
+            return;
+        }
+
+        var answer = System.Windows.MessageBox.Show(
+            $"Pull {updatable.Count} modules, then rebuild and deploy?\n\n" +
+            (skipped > 0 ? $"{skipped} ZIP-installed module(s) will be skipped — they have no remote to pull from.\n\n" : "") +
+            "Running servers will be shut down gracefully and restarted afterwards. A module with local edits " +
+            "is left at its current commit rather than aborting the run.\n\n" +
+            "The rebuild can take a long while.",
+            "Update all modules and build",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (answer != System.Windows.MessageBoxResult.Yes)
+            return;
+
+        IsUpdatingAll = true;
+        BatchFailed = false;
+        BatchStatus = "Starting…";
+        BatchReport.Clear();
+
+        // The rows' own buttons must not stay live while the batch is pulling those same trees.
+        foreach (var row in updatable)
+        {
+            row.IsBusy = true;
+            row.Report.Clear();
+        }
+
+        try
+        {
+            var progress = new Progress<UpdateProgress>(p =>
+            {
+                BatchStatus = p.Message;
+                if (p.Step == UpdateStep.Build)
+                    BatchReport.Capture(p.Message);
+            });
+
+            var paths = updatable.Select(m => m.Model.Path).ToList();
+            var report = await _coordinator.Orchestrator
+                .RunAsync(paths, rebuild: true, progress)
+                .ConfigureAwait(true);
+
+            BatchStatus = report.Message;
+            BatchFailed = !report.Success;
+            if (!report.Success)
+                BatchReport.Fail(report.Message);
+
+            // Show each module its own pull outcome, so the grid's "Last result" column stops describing
+            // whatever the user last did to that row by hand.
+            var byName = updatable.ToDictionary(m => m.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var pull in report.Pulls)
+            {
+                if (!byName.TryGetValue(pull.Name, out var row))
+                    continue;
+                row.ActionResult = pull.Message;
+                row.ActionFailed = !pull.Success;
+            }
+        }
+        catch (Exception ex)
+        {
+            BatchStatus = "Failed: " + ex.Message;
+            BatchFailed = true;
+            BatchReport.Fail(ex.Message);
+        }
+        finally
+        {
+            foreach (var row in updatable)
+                row.IsBusy = false;
+            IsUpdatingAll = false;
+        }
+
+        // The pulls moved every module's commit — the grid would otherwise keep advertising updates that are
+        // already applied. Deliberately outside the finally: IsUpdatingAll must be clear before this runs.
+        await CheckModulesAsync().ConfigureAwait(true);
+    }
 }
 
 /// <summary>One row in the modules table.</summary>
@@ -81,11 +212,8 @@ public sealed partial class ModuleRowViewModel : ObservableObject
 {
     private readonly ServerCoordinator _coordinator;
 
-    /// <summary>
-    /// How much build output to retain for the failure report. A failing AzerothCore build emits far more
-    /// than this, but the diagnostics are extracted as lines arrive, so the cap only bounds the raw tail.
-    /// </summary>
-    private const int MaxLogLines = 400;
+    /// <summary>Compiler output from the last failed build that involved this module.</summary>
+    public BuildReportViewModel Report { get; }
 
     // Model IS reassigned (after a re-clone re-checks the row), so every computed property over it must be
     // notified — otherwise the row would keep showing "not a git repository" for a folder that is now a
@@ -115,23 +243,11 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     /// <summary>Drives the colour of <see cref="ActionResult"/> — a failed build shouldn't read as muted chatter.</summary>
     [ObservableProperty] private bool _actionFailed;
 
-    [ObservableProperty] private string _buildReportSummary = "";
-    [ObservableProperty] private bool _hasBuildReport;
-
-    // Which list the report shows: the extracted diagnostics, or the raw tail when none were recognised.
-    [ObservableProperty] private bool _showBuildErrors;
-    [ObservableProperty] private bool _showRawBuildLog;
-
-    /// <summary>Compiler diagnostics from the last failed build, newest run only.</summary>
-    public ObservableCollection<string> BuildErrors { get; } = new();
-
-    /// <summary>Tail of the raw build output, kept so a failure with no recognised diagnostic still shows something.</summary>
-    public ObservableCollection<string> BuildLog { get; } = new();
-
     public ModuleRowViewModel(ModuleStatus model, ServerCoordinator coordinator)
     {
         _model = model;
         _coordinator = coordinator;
+        Report = new BuildReportViewModel(() => Name);
     }
 
     public string Name => Model.Name;
@@ -257,10 +373,8 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         IsBusy = true;
         ActionFailed = false;
         ActionResult = "Updating…";
-        ClearBuildReport();
+        Report.Clear();
 
-        // Every build line, kept only for the duration of this run so the report reflects one build.
-        var captured = new List<string>();
         try
         {
             // Progress messages are steps, not verdicts — only the final report decides success.
@@ -268,19 +382,19 @@ public sealed partial class ModuleRowViewModel : ObservableObject
             {
                 ActionResult = p.Message;
                 if (p.Step == UpdateStep.Build)
-                    Capture(captured, p.Message);
+                    Report.Capture(p.Message);
             });
             var report = await _coordinator.Orchestrator.RunAsync(Model.Path, rebuild: true, progress).ConfigureAwait(true);
             ActionResult = report.Message;
             ActionFailed = !report.Success;
             if (!report.Success)
-                BuildFailureReport(report.Message, captured);
+                Report.Fail(report.Message);
         }
         catch (Exception ex)
         {
             ActionResult = "Failed: " + ex.Message;
             ActionFailed = true;
-            BuildFailureReport(ex.Message, captured);
+            Report.Fail(ex.Message);
         }
         finally
         {
@@ -288,72 +402,22 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         }
     }
 
-    private void Capture(List<string> captured, string line)
-    {
-        captured.Add(line);
-        BuildLog.Add(line);
-        while (BuildLog.Count > MaxLogLines)
-            BuildLog.RemoveAt(0);
-    }
-
-    /// <summary>Turn a failed run's captured output into the report shown under the modules table.</summary>
-    private void BuildFailureReport(string message, List<string> captured)
-    {
-        BuildErrors.Clear();
-        foreach (var error in BuildDiagnostics.ExtractErrors(captured))
-            BuildErrors.Add(error);
-
-        BuildReportSummary = BuildErrors.Count switch
-        {
-            0 => $"{message} No compiler diagnostics recognised — showing the raw output.",
-            1 => $"{message} 1 error:",
-            var n => $"{message} {n} errors:",
-        };
-        ShowBuildErrors = BuildErrors.Count > 0;
-        ShowRawBuildLog = BuildErrors.Count == 0;
-        HasBuildReport = true;
-    }
-
     /// <summary>
-    /// Carry a previous row's build report onto this one, so re-checking for updates doesn't discard the
+    /// Carry a previous row's outcome onto this one, so re-checking for updates doesn't discard the
     /// explanation of a build that failed minutes ago.
     /// </summary>
+    /// <remarks>
+    /// The last result is carried even with no build report attached: an "Update all" finishes by re-checking
+    /// every module, and without this the per-module pull messages it just wrote would be wiped by the very
+    /// refresh meant to show their effect.
+    /// </remarks>
     public void AdoptBuildReport(ModuleRowViewModel old)
     {
-        if (!old.HasBuildReport)
+        Report.Adopt(old.Report);
+        if (old.ActionResult == null)
             return;
-
-        foreach (var e in old.BuildErrors) BuildErrors.Add(e);
-        foreach (var l in old.BuildLog) BuildLog.Add(l);
-        BuildReportSummary = old.BuildReportSummary;
-        ShowBuildErrors = old.ShowBuildErrors;
-        ShowRawBuildLog = old.ShowRawBuildLog;
-        HasBuildReport = true;
         ActionResult = old.ActionResult;
         ActionFailed = old.ActionFailed;
-    }
-
-    private void ClearBuildReport()
-    {
-        HasBuildReport = false;
-        ShowBuildErrors = false;
-        ShowRawBuildLog = false;
-        BuildReportSummary = "";
-        BuildErrors.Clear();
-        BuildLog.Clear();
-    }
-
-    /// <summary>Copy the whole report so it can be pasted into an issue or a Discord thread.</summary>
-    [RelayCommand]
-    private void CopyBuildReport()
-    {
-        var text = string.Join(Environment.NewLine,
-            new[] { $"{Name}: {ActionResult}", "" }
-                .Concat(BuildErrors)
-                .Concat(new[] { "", "--- build output (last " + BuildLog.Count + " lines) ---" })
-                .Concat(BuildLog));
-        try { System.Windows.Clipboard.SetText(text); }
-        catch { /* clipboard can be locked by another app — not worth failing the UI over */ }
     }
 
     private void RunAction(Func<(bool Success, string Message)> action)

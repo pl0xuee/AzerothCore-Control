@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16] - 2026-07-19
+
+### Added
+- **"Update all + build" on the Modules tab.** Pulls every git-backed module, then compiles and deploys once.
+  - Repeating the per-row "Pull + Build" was the only way to update more than one module, and it was the wrong
+    shape: each run shuts the servers down, backs up the databases and recompiles the whole tree. Twenty
+    modules meant twenty full rebuilds of code that AzerothCore compiles into a single target anyway — and,
+    with the cmake review window on by default, twenty prompts to click through.
+  - A module that can't be pulled (local edits, diverged history, a ZIP install with no remote) no longer
+    stops the others. It stays at its current commit, which is a perfectly buildable state, and is named in
+    the result. The run is only abandoned if *every* pull failed, since then there's nothing new to compile.
+  - Each module's pull outcome lands on its own row, and the batch's compiler errors get their own "Update
+    all" tab — a build covering every module doesn't belong under any single one. That tab comes to the front
+    by itself when a build fails.
+
+### Changed
+- The build-report panel is now one view (`BuildReportView`) shared by a module row and the batch, rather than
+  a block of XAML bound to a single row's properties. The batch needed exactly the same panel.
+
 ## [0.1.15] - 2026-07-17
 
 ### Added
