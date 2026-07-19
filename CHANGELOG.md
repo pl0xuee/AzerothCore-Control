@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18] - 2026-07-19
+
+### Fixed
+- **A failed batch build now names the modules that didn't pull.** "Update all" deliberately compiles on past
+  a module it couldn't pull — one module with local edits shouldn't block nineteen others — but when the build
+  then failed, the report said only `Build failed (exit 1)` and the pull failures were dropped from it. A
+  module still sitting on its old code is the single most likely cause of the errors that follow, so the
+  message now says which ones they are: *"mod-challenge-modes is still on the previous code after a failed
+  pull — if the errors are in it, that's why."* Modules are listed by name, never counted; knowing two failed
+  is useless without knowing which two.
+
 ## [0.1.17] - 2026-07-19
 
 ### Added

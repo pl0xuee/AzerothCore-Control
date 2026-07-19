@@ -218,7 +218,7 @@ public sealed class UpdateOrchestrator
                 if (!build.Success || build.BinaryOutputDir == null)
                 {
                     // Nothing was deployed, so the installed binaries are still the ones that worked.
-                    return FailAndRestore(UpdateStep.Build, $"Build failed (exit {build.ExitCode}).");
+                    return FailAndRestore(UpdateStep.Build, BuildFailureMessage(build.ExitCode, failedPulls));
                 }
 
                 // 5. Deploy — copies binaries + .conf.dist, NEVER the user's .conf.
@@ -252,6 +252,43 @@ public sealed class UpdateOrchestrator
             _log.LogError(ex, "Update failed for {Modules}", string.Join(", ", modulePaths.Select(Path.GetFileName)));
             return new UpdateReport(false, ex.Message, Pulls: pulls);
         }
+    }
+
+    /// <summary>
+    /// What to say when the compile fails. Names the modules that didn't pull: they're still on their old
+    /// code, which makes them the first thing to suspect when the build breaks straight afterwards.
+    /// </summary>
+    /// <remarks>
+    /// A bare exit code sends the user hunting through compiler output for a cause the run already knew
+    /// about — the batch deliberately builds on past a failed pull, so it owes them that connection.
+    /// </remarks>
+    internal static string BuildFailureMessage(int exitCode, IReadOnlyList<ModulePullOutcome> failedPulls)
+    {
+        var message = $"Build failed (exit {exitCode}).";
+        if (failedPulls.Count == 0)
+            return message;
+
+        return message +
+            $" {Describe(failedPulls)} still on the previous code after a failed pull — " +
+            $"if the errors are in {(failedPulls.Count == 1 ? "it" : "one of them")}, that's why.";
+    }
+
+    /// <summary>"mod-a is" / "mod-a and mod-b are" / "mod-a, mod-b and mod-c are" — named, not counted.</summary>
+    /// <remarks>
+    /// A count alone ("2 modules failed to pull") is unusable: the whole point is to know WHICH module to go
+    /// and look at.
+    /// </remarks>
+    private static string Describe(IReadOnlyList<ModulePullOutcome> failed)
+    {
+        var names = failed.Select(p => p.Name).ToList();
+        var verb = names.Count == 1 ? "is" : "are";
+        var list = names.Count switch
+        {
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+        };
+        return $"{list} {verb}";
     }
 
     private static void Report(IProgress<UpdateProgress>? p, UpdateStep step, string message)

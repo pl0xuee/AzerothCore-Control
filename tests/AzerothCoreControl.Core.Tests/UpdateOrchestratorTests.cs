@@ -208,3 +208,49 @@ public class UpdateOrchestratorTests
         Assert.Equal(0, h.AuthLauncher.LaunchCount);
     }
 }
+
+/// <summary>
+/// What a failed batch build tells the user. The batch deliberately compiles on past a failed pull, so when
+/// the compile then breaks it owes them the connection — a module still on its old code is the first suspect.
+/// </summary>
+public class BuildFailureMessageTests
+{
+    private static ModulePullOutcome Failed(string name) => new(name, false, "Working tree has uncommitted changes.");
+
+    [Fact]
+    public void WithNoFailedPulls_ItStaysTerse()
+    {
+        var message = UpdateOrchestrator.BuildFailureMessage(1, Array.Empty<ModulePullOutcome>());
+
+        Assert.Equal("Build failed (exit 1).", message);
+    }
+
+    [Fact]
+    public void OneModuleThatDidNotPull_IsNamedAsTheSuspect()
+    {
+        // The real case this exists for: mod-challenge-modes refuses to pull, the batch builds anyway, and the
+        // compiler errors are all in that module. Reporting only "Build failed (exit 1)" hides the cause.
+        var message = UpdateOrchestrator.BuildFailureMessage(1, new[] { Failed("mod-challenge-modes") });
+
+        Assert.Contains("mod-challenge-modes is still on the previous code", message, StringComparison.Ordinal);
+        Assert.Contains("that's why", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SeveralModules_AreListedNotCounted()
+    {
+        // "2 modules failed to pull" is unusable — the whole point is knowing WHICH one to go and look at.
+        var message = UpdateOrchestrator.BuildFailureMessage(1, new[] { Failed("mod-a"), Failed("mod-b"), Failed("mod-c") });
+
+        Assert.Contains("mod-a, mod-b and mod-c are still on the previous code", message, StringComparison.Ordinal);
+        Assert.Contains("one of them", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TwoModules_ReadAsAPair()
+    {
+        var message = UpdateOrchestrator.BuildFailureMessage(1, new[] { Failed("mod-a"), Failed("mod-b") });
+
+        Assert.Contains("mod-a and mod-b are", message, StringComparison.Ordinal);
+    }
+}
