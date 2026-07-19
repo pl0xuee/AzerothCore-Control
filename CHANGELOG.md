@@ -4,6 +4,42 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.21] - 2026-07-19
+
+### Added
+- **`mod-challenge-modes` now defaults to `AldebaraanMKII/mod-challenge-modes`.** The module's original repo,
+  `ZhengPeiRu21/mod-challenge-modes`, still declares `OnPlayerResurrect`'s third parameter by value and stopped
+  overriding the core hook when it became `bool&`. It hasn't been touched since 2025-11-25, so every install
+  following it fails the entire modules target — they all compile together. Pulls correctly report "already up
+  to date" while the build fails, with nothing connecting the two.
+  - There's now a small built-in list of modules whose maintained home isn't the repo the catalogue finds. The
+    Modules tab flags a checkout following an unmaintained upstream and offers to repoint it, with no
+    configuration needed.
+  - A user's own pin always wins and suppresses the built-in suggestion entirely — someone who deliberately
+    pinned a module isn't then nagged towards our preference for it.
+  - The wording distinguishes the two: our suggestion never claims the user pinned anything.
+
+### Fixed
+- **"Replace modules that won't pull" could destroy healthy checkouts.** `Pull` reports failure for network
+  drops, TLS errors, bad credentials, rate limiting and locked repos as well as for local divergence. The
+  replace path acted on all of them, so a Wi-Fi drop part-way through a twenty-module batch would move every
+  remaining module out of `modules/` and then fail to clone it back — with recovery resting on a best-effort
+  restore. Failures are now classified, and only a dirty tree or a diverged history can authorise a replace.
+- **Re-cloning silently switched the module's branch.** `Repository.Clone` without options checks out the
+  remote's default branch, so a module on `wotlk` (or `master` where the remote defaults to `main`) came back
+  as different code with no mention of it. Force-replace now preserves the branch, and every re-clone reports
+  which branch it landed on.
+- **Re-cloning ignored the configured GitHub token**, while pull and fetch both used it — so a private fork
+  failed to clone *after* its folder had already been moved aside.
+- **A cancelled update left the realm down.** Cancelling during the pull loop, or any unanticipated exception,
+  returned without restarting the servers that had been stopped for the update — even though no binary had
+  been touched. Both paths now restore, like every deliberate failure path already did.
+- **The "Update all" tab blanked the panel.** Its `IsSelected` binding also pushed `false` when the report was
+  cleared at the start of a run, deselecting the tab without selecting another and driving the panel to empty
+  for the duration. It's a trigger now, which reverts rather than forcing `false`.
+- Modules without a git checkout are excluded from "Update all" but still compiled, so they could break the
+  build while never appearing in the result. The batch now says how many were skipped and why that matters.
+
 ## [0.1.20] - 2026-07-19
 
 ### Fixed

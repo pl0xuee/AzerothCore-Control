@@ -16,6 +16,15 @@ namespace AzerothCoreControl.Core.Services;
 public sealed record ModulesFolderResult(string? Path, string Detail);
 
 /// <summary>
+/// A repo a module ought to follow instead of the one it does.
+/// </summary>
+/// <param name="FromUser">
+/// True when the user pinned it, false when it's the app's built-in maintained-fork suggestion. The
+/// distinction reaches the UI: our recommendation must never be worded as their decision.
+/// </param>
+public sealed record RepoSuggestion(CatalogueEntry Entry, bool FromUser);
+
+/// <summary>
 /// Scans the AzerothCore <c>modules/</c> folder and reports which module git repos have updates
 /// available on their GitHub remote. Uses LibGit2Sharp for local repo state and Octokit for the
 /// remote tip / latest release.
@@ -268,8 +277,9 @@ public sealed partial class ModuleUpdateChecker
                 LocalCommit = Short(localSha),
                 RemoteCommit = Short(remoteSha),
                 GitHubRepo = owner != null ? $"{owner}/{repoName}" : null,
-                PinnedRepo = mismatch?.FullName,
-                PinnedCloneUrl = mismatch?.CloneUrl,
+                PinnedRepo = mismatch?.Entry.FullName,
+                PinnedCloneUrl = mismatch?.Entry.CloneUrl,
+                PinnedByUser = mismatch?.FromUser ?? false,
                 BehindBy = behind,
                 AheadBy = ahead,
                 HasLocalChanges = status.IsDirty,
@@ -361,28 +371,44 @@ public sealed partial class ModuleUpdateChecker
         return client;
     }
 
-    /// <summary>Extract "owner/repo" from the origin remote URL (https or ssh form).</summary>
     /// <summary>
-    /// The configured pin for <paramref name="folderName"/>, but only when it names a different repo than the
-    /// checkout's origin. Null when unpinned, unparseable, or already in agreement.
+    /// The repo this module ought to follow when that isn't the one its origin points at, and whether the
+    /// user chose it. Null when there's nothing to suggest, or the checkout already agrees.
     /// </summary>
-    internal static CatalogueEntry? FindRemoteMismatch(
+    /// <remarks>
+    /// Two sources, in order: the user's own pin, then the built-in maintained-fork list. The user's pin wins
+    /// outright and suppresses the built-in one entirely — someone who has deliberately pinned a module must
+    /// not then be nagged towards our preference for it.
+    /// </remarks>
+    internal static RepoSuggestion? FindRemoteMismatch(
         IEnumerable<ModuleRepoOverride>? overrides, string folderName, string? owner, string? repoName)
     {
-        var pin = ModuleCatalogue.FindOverride(overrides, folderName);
-        if (pin == null)
-            return null;
+        var userPin = ModuleCatalogue.FindOverride(overrides, folderName);
+        if (userPin != null)
+            return Disagreeing(userPin, owner, repoName) is { } d ? new RepoSuggestion(d, FromUser: true) : null;
 
-        // No parseable remote at all: the pin has nothing to disagree with, but it IS actionable — pointing a
-        // remote-less checkout at the pinned repo is exactly what the user asked for by pinning it.
-        if (owner == null || repoName == null)
-            return pin;
-
-        return string.Equals(pin.FullName, $"{owner}/{repoName}", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : pin;
+        return Disagreeing(ModuleCatalogue.FindMaintainedFork(folderName), owner, repoName) is { } fork
+            ? new RepoSuggestion(fork, FromUser: false)
+            : null;
     }
 
+    /// <summary>The candidate, but only if it names a repo other than the one the checkout follows.</summary>
+    private static CatalogueEntry? Disagreeing(CatalogueEntry? candidate, string? owner, string? repoName)
+    {
+        if (candidate == null)
+            return null;
+
+        // No parseable remote at all: nothing to disagree with, but it IS actionable — pointing a remote-less
+        // checkout at the right repo is exactly what's wanted.
+        if (owner == null || repoName == null)
+            return candidate;
+
+        return string.Equals(candidate.FullName, $"{owner}/{repoName}", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : candidate;
+    }
+
+    /// <summary>Extract "owner/repo" from the origin remote URL (https or ssh form).</summary>
     internal static (string? owner, string? repo) ParseGitHubRemote(Repository repo)
     {
         var origin = repo.Network.Remotes["origin"] ?? repo.Network.Remotes.FirstOrDefault();

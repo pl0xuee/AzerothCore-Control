@@ -28,6 +28,30 @@ public sealed class ModuleCatalogue
     /// <summary>The GitHub topic that defines the catalogue's module list.</summary>
     public const string ModuleTopic = "azerothcore-module";
 
+    /// <summary>
+    /// Modules whose best-known home is NOT the repo the catalogue finds — because the original has stopped
+    /// being maintained and a fork carries it on.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue matches on repo name and ranks by popularity, so it keeps pointing at the original long
+    /// after it stops compiling: the fork that actually works is less starred and often named identically.
+    /// A user who follows the original sees "already up to date" forever while their build fails, with nothing
+    /// in the app connecting the two.
+    /// <para>
+    /// Entries are a judgement call and must be justified in a comment — this is the app telling users where
+    /// their code should come from, which it has no business doing casually. A user's own pin always wins.
+    /// </para>
+    /// </remarks>
+    internal static readonly IReadOnlyDictionary<string, string> MaintainedForks =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // ZhengPeiRu21/mod-challenge-modes still declares OnPlayerResurrect's third parameter by value,
+            // which stopped overriding the core hook when it became bool&. It has not been touched since
+            // 2025-11-25, so every install following it fails the whole modules target — they all compile into
+            // one. AldebaraanMKII's fork carries the fix plus later core-compatibility work.
+            ["mod-challenge-modes"] = "AldebaraanMKII/mod-challenge-modes",
+        };
+
     /// <summary>Enough for the ~300 published modules, with headroom; a guard against paging forever.</summary>
     private const int MaxPages = 6;
     private const int PerPage = 100;
@@ -107,9 +131,21 @@ public sealed class ModuleCatalogue
         if (FindOverride(_settings().ModuleRepoOverrides, folderName) is { } pinned)
             return pinned;
 
+        // A known-maintained fork beats the catalogue's popularity match, which would send the user to an
+        // original that no longer builds. Still below the user's own pin: they may be on that original
+        // deliberately.
+        if (FindMaintainedFork(folderName) is { } fork)
+            return fork;
+
         var all = await GetAllAsync(cancellationToken).ConfigureAwait(false);
         return Resolve(all, folderName);
     }
+
+    /// <summary>The built-in maintained fork for <paramref name="folderName"/>, or null if there isn't one.</summary>
+    internal static CatalogueEntry? FindMaintainedFork(string folderName)
+        => MaintainedForks.TryGetValue(folderName.Trim(), out var repo)
+            ? FromRepoSpec(folderName, repo)
+            : null;
 
     /// <summary>The override for <paramref name="folderName"/> as an entry, or null if there isn't a usable one.</summary>
     internal static CatalogueEntry? FindOverride(IEnumerable<ModuleRepoOverride>? overrides, string folderName)

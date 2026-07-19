@@ -190,10 +190,18 @@ public sealed partial class ModulesViewModel : ObservableObject
                 .RunAsync(paths, rebuild: true, progress, replaceUnpullable: ReplaceUnpullable)
                 .ConfigureAwait(true);
 
-            BatchStatus = report.Message;
+            // A ZIP-installed module is excluded from the pulls but STILL COMPILED — so it can break the build
+            // while never appearing in the report. Saying so only in the pre-run dialog leaves the user
+            // staring at errors from a module the result never mentions.
+            var skippedNote = skipped == 0
+                ? ""
+                : $" {skipped} module(s) without a git checkout were not updated, but are still compiled — " +
+                  "re-clone them if the errors are theirs.";
+
+            BatchStatus = report.Message + skippedNote;
             BatchFailed = !report.Success;
             if (!report.Success)
-                BatchReport.Fail(report.Message);
+                BatchReport.Fail(report.Message + skippedNote);
 
             // Show each module its own pull outcome, so the grid's "Last result" column stops describing
             // whatever the user last did to that row by hand.
@@ -245,6 +253,7 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasRemoteMismatch))]
     [NotifyPropertyChangedFor(nameof(CanSwitchRemote))]
     [NotifyPropertyChangedFor(nameof(MismatchText))]
+    [NotifyPropertyChangedFor(nameof(SwitchButtonText))]
     [NotifyPropertyChangedFor(nameof(SourceText))]
     [NotifyPropertyChangedFor(nameof(RevisionText))]
     [NotifyPropertyChangedFor(nameof(IncomingCommits))]
@@ -317,9 +326,19 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     /// Spells the disagreement out both ways. "Pinned to X" alone reads as settled fact; the point is that
     /// updates are currently being checked against something else.
     /// </summary>
-    public string MismatchText => HasRemoteMismatch
-        ? $"Pinned to {Model.PinnedRepo}, but this checkout follows {Model.GitHubRepo ?? "no remote"}."
-        : "";
+    /// <remarks>
+    /// A built-in suggestion is worded as ours, not theirs. Telling someone they "pinned" a repo they never
+    /// chose would be a lie, and would send them hunting through settings for an entry that isn't there.
+    /// </remarks>
+    public string MismatchText => !HasRemoteMismatch
+        ? ""
+        : Model.PinnedByUser
+            ? $"Pinned to {Model.PinnedRepo}, but this checkout follows {Model.GitHubRepo ?? "no remote"}."
+            : $"This follows {Model.GitHubRepo ?? "no remote"}, which is no longer maintained. " +
+              $"{Model.PinnedRepo} is the fork that carries it on.";
+
+    /// <summary>Ours reads as a suggestion; theirs reads as the instruction it is.</summary>
+    public string SwitchButtonText => Model.PinnedByUser ? "Use pinned repo" : "Use maintained fork";
 
     public IReadOnlyList<ModuleCommit> IncomingCommits => Model.IncomingCommits;
     public bool HasIncomingCommits => Model.IncomingCommits.Count > 0;
@@ -357,9 +376,16 @@ public sealed partial class ModuleRowViewModel : ObservableObject
         if (cloneUrl == null || pinned == null || !CanSwitchRemote)
             return;
 
+        // Say whose idea this is. A suggestion the app made must not be presented as a choice the user
+        // already made — they'd go looking for a setting they never created.
+        var provenance = Model.PinnedByUser
+            ? $"It currently follows {Model.GitHubRepo ?? "no remote"}, but you've pinned it to {pinned}."
+            : $"It currently follows {Model.GitHubRepo ?? "no remote"}, which is no longer maintained. " +
+              $"{pinned} is the fork that carries it on — this is a suggestion from the app, not a pin you set.";
+
         var answer = System.Windows.MessageBox.Show(
             $"Point {Name} at {pinned}?\n\n" +
-            $"It currently follows {Model.GitHubRepo ?? "no remote"}. This rewrites the module's origin remote " +
+            provenance + " This rewrites the module's origin remote " +
             "and fetches — no files are changed and nothing is merged, so your working tree is untouched.\n\n" +
             "If the two histories have diverged (usual for a fork), you'll be told what it would take to move across.",
             "Switch remote",

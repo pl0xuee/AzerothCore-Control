@@ -191,6 +191,38 @@ public class UpdateOrchestratorTests
     }
 
     [Fact]
+    public async Task ATransientPullFailure_NeverTriggersTheDestructiveReplace()
+    {
+        // The dangerous case: Pull reports failure for network drops, auth errors, rate limits and locked
+        // repos as well as for local divergence. If "replace what won't pull" acted on those, one dropped
+        // connection part-way through a twenty-module batch would move every remaining module out of
+        // modules/ and then fail to clone it back -- destroying checkouts that were never the problem.
+        var h = Create();
+        var (root, module) = AGitRepo();
+        try
+        {
+            // Break the remote so the pull fails to FETCH rather than failing to fast-forward.
+            using (var repo = new LibGit2Sharp.Repository(module))
+                repo.Network.Remotes.Update("origin", r => r.Url = Path.Combine(root, "gone"));
+
+            var pull = new ModuleUpdater(() => new AppSettings()).Pull(module);
+            Assert.False(pull.Success);
+            Assert.Equal(PullFailureKind.Other, pull.Failure);
+            Assert.False(pull.ReplacingWouldHelp);
+
+            await h.Orchestrator.RunAsync(new[] { module }, rebuild: true, replaceUnpullable: true);
+
+            // Still a checkout, still where it was -- not moved aside into module-backups/.
+            Assert.True(LibGit2Sharp.Repository.IsValid(module));
+            Assert.True(File.Exists(Path.Combine(module, "README.md")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public async Task WhenOnlyAuthWasRunning_ItIsBroughtBackUp()
     {
         // Regression: the shutdown stopped BOTH servers if EITHER was running, but the restart only keyed off

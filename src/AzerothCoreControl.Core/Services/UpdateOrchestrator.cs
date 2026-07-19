@@ -193,7 +193,12 @@ public sealed class UpdateOrchestrator
                 // A refused pull leaves the module on old code forever. When the user has asked for it,
                 // replace the folder outright with the remote's latest — the only way past a dirty tree or a
                 // diverged history, and the old folder is kept as a backup.
-                if (!pull.Success && replaceUnpullable)
+                //
+                // ReplacingWouldHelp is the load-bearing part: Pull reports failure for network drops, auth
+                // errors and locked repos too, and replacing on those would move a perfectly good checkout
+                // aside and then fail to clone it back. One dropped connection mid-batch must not shred every
+                // remaining module.
+                if (!pull.Success && replaceUnpullable && pull.ReplacingWouldHelp)
                 {
                     Report(progress, UpdateStep.Pull, $"{name}: {pull.Message} Replacing with the latest...");
                     var replaced = _moduleUpdater.ForceReplace(path);
@@ -269,13 +274,19 @@ public sealed class UpdateOrchestrator
 
             return new UpdateReport(true, message, deployResult, pulls);
         }
+        // Both of these can be reached AFTER the servers were stopped and BEFORE any binary was replaced —
+        // cancelling during the pull loop, or an exception no step anticipated. The installed binaries are
+        // still the ones that worked, so the realm must come back up rather than stay down behind red text.
+        // Every deliberate failure path routes through FailAndRestore; these two used to be the exceptions.
         catch (OperationCanceledException)
         {
+            RestartIfWeStopped();
             return Fail(progress, UpdateStep.Restart, "Update cancelled.") with { Pulls = pulls };
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "Update failed for {Modules}", string.Join(", ", modulePaths.Select(Path.GetFileName)));
+            RestartIfWeStopped();
             return new UpdateReport(false, ex.Message, Pulls: pulls);
         }
     }

@@ -29,13 +29,17 @@ public class ModuleRepointTests : IDisposable
 
     private static readonly Signature Sig = new("t", "t@t", DateTimeOffset.FromUnixTimeSeconds(1700000000));
 
-    /// <summary>A repo with one commit, usable as a clone source.</summary>
+    /// <summary>
+    /// A repo with one commit, usable as a clone source. Its content varies by name deliberately: the
+    /// signature uses a fixed timestamp, so two repos built from identical content would produce the identical
+    /// root commit SHA and count as the same history.
+    /// </summary>
     private string CreateRepo(string name)
     {
         var path = Path.Combine(_root, name);
         Directory.CreateDirectory(path);
         Repository.Init(path);
-        Commit(path, "README.md", "initial");
+        Commit(path, "README.md", $"initial content of {name}");
         return path;
     }
 
@@ -99,6 +103,27 @@ public class ModuleRepointTests : IDisposable
         // The local commit is untouched — nothing was merged or reset.
         using var repo = new Repository(module);
         Assert.Equal(localSha, repo.Head.Tip.Sha);
+    }
+
+    [Fact]
+    public void ARepoWithNoSharedHistory_IsTreatedAsDiverged()
+    {
+        // Pointing at an entirely unrelated repo must never look fast-forwardable. (LibGit2Sharp still
+        // produces counts here rather than the nulls its int? signature allows for, so this exercises the
+        // ordinary diverged path — the null branch in DescribeDivergence stays as a guard against the
+        // signature, not against a case reachable from this test.)
+        var upstream = CreateRepo("upstream");
+        var module = Path.Combine(_root, "mod-thing");
+        Repository.Clone(upstream, module);
+
+        var unrelated = CreateRepo("something-else");   // its own root commit, no shared ancestry
+
+        var result = _updater.RepointRemote(module, unrelated);
+
+        Assert.True(result.Diverged);
+        Assert.False(result.CanFastForward);
+        // Whichever branch produced the text, it never renders a blank where a number should be.
+        Assert.DoesNotMatch(@"\(\s*local commits|\(\s*of its commits", result.Message);
     }
 
     [Fact]
@@ -175,7 +200,8 @@ public class RemoteMismatchTests
             "mod-challenge-modes", "AldebaraanMKII", "mod-challenge-modes");
 
         Assert.NotNull(result);
-        Assert.Equal("poemihai/mod-challenge-modes", result!.FullName);
+        Assert.Equal("poemihai/mod-challenge-modes", result!.Entry.FullName);
+        Assert.True(result.FromUser);
     }
 
     [Fact]
@@ -202,12 +228,43 @@ public class RemoteMismatchTests
     }
 
     [Fact]
-    public void NoPin_IsNeverAMismatch()
+    public void NoPin_AndNoKnownFork_IsNeverAMismatch()
     {
         Assert.Null(ModuleUpdateChecker.FindRemoteMismatch(
             new List<ModuleRepoOverride>(), "mod-transmog", "azerothcore", "mod-transmog"));
         Assert.Null(ModuleUpdateChecker.FindRemoteMismatch(
             null, "mod-transmog", "azerothcore", "mod-transmog"));
+    }
+
+    [Fact]
+    public void AModuleOnAnUnmaintainedUpstream_IsFlaggedWithoutAnyPin()
+    {
+        // The whole point of the built-in list: a user who never configured anything is still told their
+        // module follows a repo that stopped compiling, instead of seeing "up to date" while the build fails.
+        var result = ModuleUpdateChecker.FindRemoteMismatch(
+            null, "mod-challenge-modes", "ZhengPeiRu21", "mod-challenge-modes");
+
+        Assert.NotNull(result);
+        Assert.Equal("AldebaraanMKII/mod-challenge-modes", result!.Entry.FullName);
+        // Ours, not theirs -- the UI must not claim they pinned it.
+        Assert.False(result.FromUser);
+    }
+
+    [Fact]
+    public void AlreadyOnTheMaintainedFork_IsNotFlagged()
+    {
+        Assert.Null(ModuleUpdateChecker.FindRemoteMismatch(
+            null, "mod-challenge-modes", "AldebaraanMKII", "mod-challenge-modes"));
+    }
+
+    [Fact]
+    public void AUserPin_SuppressesTheBuiltInSuggestion()
+    {
+        // Someone who has deliberately pinned a module must not then be nagged towards our preference for it.
+        // Pinned to the unmaintained original, and sitting on it: nothing to say.
+        Assert.Null(ModuleUpdateChecker.FindRemoteMismatch(
+            Pin("mod-challenge-modes", "ZhengPeiRu21/mod-challenge-modes"),
+            "mod-challenge-modes", "ZhengPeiRu21", "mod-challenge-modes"));
     }
 
     [Fact]
@@ -298,6 +355,45 @@ public class ModuleForceReplaceTests : IDisposable
     }
 
     [Fact]
+    public void ForceReplace_KeepsTheBranchTheModuleWasOn()
+    {
+        // Cloning without a branch lands on the remote's default, which can be an entirely different codebase
+        // (master vs main, or a pinned 3.3.5a-* branch). Replacing is destructive enough without also silently
+        // moving the user to code they never chose.
+        var upstream = Path.Combine(_root, "upstream");
+        Directory.CreateDirectory(upstream);
+        Repository.Init(upstream);
+        File.WriteAllText(Path.Combine(upstream, "ChallengeModes.cpp"), "default branch code");
+        using (var repo = new Repository(upstream))
+        {
+            Commands.Stage(repo, "*");
+            repo.Commit("init", Sig, Sig, new CommitOptions());
+            repo.CreateBranch("wotlk");
+            Commands.Checkout(repo, "wotlk");
+        }
+        File.WriteAllText(Path.Combine(upstream, "ChallengeModes.cpp"), "wotlk branch code");
+        using (var repo = new Repository(upstream))
+        {
+            Commands.Stage(repo, "*");
+            repo.Commit("wotlk work", Sig, Sig, new CommitOptions());
+            Commands.Checkout(repo, "master");   // leave the default branch checked out
+        }
+
+        var module = Path.Combine(ModulesDir, "mod-challenge-modes");
+        Repository.Clone(upstream, module, new CloneOptions { BranchName = "wotlk" });
+        File.WriteAllText(Path.Combine(module, "ChallengeModes.cpp"), "local mess");   // now unpullable
+
+        var result = _updater.ForceReplace(module);
+
+        Assert.True(result.Success);
+        using var replaced = new Repository(module);
+        Assert.Equal("wotlk", replaced.Head.FriendlyName);
+        Assert.Equal("wotlk branch code", File.ReadAllText(Path.Combine(module, "ChallengeModes.cpp")));
+        // And it says where it landed, since this is the step most likely to move someone unexpectedly.
+        Assert.Contains("wotlk", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AModuleWithNoRemote_IsRefusedRatherThanEmptied()
     {
         // Nothing to re-clone from. Moving the folder aside anyway would destroy it for no gain.
@@ -324,5 +420,53 @@ public class ModuleForceReplaceTests : IDisposable
 
         Assert.False(result.Success);
         Assert.Equal("irreplaceable", File.ReadAllText(Path.Combine(folder, "keep.txt")));
+    }
+}
+
+/// <summary>
+/// The built-in maintained-fork list. It tells users where their code should come from, so its precedence
+/// against the user's own configuration is the part that matters.
+/// </summary>
+public class MaintainedForkTests
+{
+    [Fact]
+    public void TheKnownEntry_ResolvesToAUsableCloneUrl()
+    {
+        var entry = ModuleCatalogue.FindMaintainedFork("mod-challenge-modes");
+
+        Assert.NotNull(entry);
+        Assert.Equal("AldebaraanMKII/mod-challenge-modes", entry!.FullName);
+        // Must be clonable as-is: this URL is handed straight to LibGit2Sharp.
+        Assert.StartsWith("https://github.com/", entry.CloneUrl, StringComparison.Ordinal);
+        Assert.EndsWith(".git", entry.CloneUrl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FolderNamesMatchCaseInsensitively()
+    {
+        Assert.NotNull(ModuleCatalogue.FindMaintainedFork("MOD-Challenge-Modes"));
+        Assert.NotNull(ModuleCatalogue.FindMaintainedFork("  mod-challenge-modes  "));
+    }
+
+    [Fact]
+    public void AnUnlistedModule_GetsNothing()
+    {
+        Assert.Null(ModuleCatalogue.FindMaintainedFork("mod-transmog"));
+        Assert.Null(ModuleCatalogue.FindMaintainedFork(""));
+    }
+
+    [Fact]
+    public void EveryEntry_PointsSomewhereElse()
+    {
+        // An entry naming the repo it is meant to redirect AWAY from would flag every install forever with no
+        // way to satisfy it, and the "switch remote" it offers would be a no-op.
+        Assert.All(ModuleCatalogue.MaintainedForks, kv =>
+        {
+            var entry = ModuleCatalogue.FindMaintainedFork(kv.Key);
+            Assert.NotNull(entry);
+            // Parseable into owner/repo, so the mismatch comparison can never trivially disagree on format.
+            Assert.Contains("/", entry!.FullName, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrWhiteSpace(entry.CloneUrl));
+        });
     }
 }

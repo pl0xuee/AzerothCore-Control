@@ -216,9 +216,24 @@
                                                    EmptyText="No failed build for this module in this session. If a build fails, the compiler errors land here." />
                         </TabItem>
 
-                        <!-- The batch's own report. IsSelected is bound so a failed "Update all" brings its
-                             errors to the front instead of hiding them behind whichever tab was last open. -->
-                        <TabItem Header="Update all" IsSelected="{Binding BatchReport.HasReport, Mode=OneWay}">
+                        <!-- A failed "Update all" brings its errors to the front rather than hiding them behind
+                             whichever tab was last open.
+
+                             This is a TRIGGER, not IsSelected="{Binding ...}". A OneWay binding also pushes
+                             FALSE when the report is cleared at the start of the next run — deselecting the
+                             selected tab without selecting another drives SelectedIndex to -1 and blanks the
+                             panel for the whole batch. A trigger reverts to the unset value instead, leaving
+                             the TabControl to pick. -->
+                        <TabItem Header="Update all">
+                            <TabItem.Style>
+                                <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding BatchReport.HasReport}" Value="True">
+                                            <Setter Property="IsSelected" Value="True" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TabItem.Style>
                             <views:BuildReportView DataContext="{Binding BatchReport}"
                                                    EmptyText="No failed &#x201C;Update all&#x201D; build in this session. One build covers every module, so its errors land here rather than on a single row." />
                         </TabItem>
@@ -308,7 +323,7 @@
                                                     Style="{StaticResource GridButton}" />
                                             <!-- Only when a pin disagrees with the actual origin: repoints the
                                                  checkout at the repo the user says this module really is. -->
-                                            <Button Content="Use pinned repo" Command="{Binding SwitchToPinnedRepoCommand}"
+                                            <Button Content="{Binding SwitchButtonText}" Command="{Binding SwitchToPinnedRepoCommand}"
                                                     IsEnabled="{Binding CanSwitchRemote}"
                                                     ToolTip="{Binding MismatchText}"
                                                     Style="{StaticResource GridButton}"

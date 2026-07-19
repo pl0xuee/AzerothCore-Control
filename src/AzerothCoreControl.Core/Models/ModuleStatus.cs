@@ -69,6 +69,12 @@ public sealed class ModuleStatus
     /// <summary>Clone URL of <see cref="PinnedRepo"/>, for repointing the remote at it.</summary>
     public string? PinnedCloneUrl { get; init; }
 
+    /// <summary>
+    /// True when <see cref="PinnedRepo"/> is the user's own pin, false when it's the app's built-in
+    /// maintained-fork suggestion. The UI must not present our recommendation as the user's decision.
+    /// </summary>
+    public bool PinnedByUser { get; init; }
+
     /// <summary>The checkout's origin disagrees with the repo it's pinned to in settings.</summary>
     public bool HasRemoteMismatch => PinnedRepo != null && PinnedCloneUrl != null;
 

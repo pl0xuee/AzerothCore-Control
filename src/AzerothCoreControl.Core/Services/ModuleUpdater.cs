@@ -1,11 +1,46 @@
 using AzerothCoreControl.Core.Models;
 using LibGit2Sharp;
+using LibGit2Sharp.Handlers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AzerothCoreControl.Core.Services;
 
-public sealed record PullResult(bool Success, string Message, bool RebuildRecommended, bool SqlChanged);
+/// <summary>Why a pull was refused — the caller needs this to decide whether replacing the module is sane.</summary>
+public enum PullFailureKind
+{
+    /// <summary>The pull succeeded.</summary>
+    None,
+
+    /// <summary>Uncommitted local changes. Re-cloning would fix it, at the cost of those changes.</summary>
+    DirtyTree,
+
+    /// <summary>Local commits the remote doesn't have. Re-cloning would fix it, at the cost of those commits.</summary>
+    Diverged,
+
+    /// <summary>
+    /// Anything else: no network, TLS failure, bad credentials, rate limiting, a locked or corrupt .git.
+    /// </summary>
+    /// <remarks>
+    /// These are TRANSIENT or environmental — the module's contents aren't the problem, so replacing it would
+    /// destroy a perfectly good checkout without fixing anything. Must never trigger a destructive recovery.
+    /// </remarks>
+    Other,
+}
+
+public sealed record PullResult(
+    bool Success,
+    string Message,
+    bool RebuildRecommended,
+    bool SqlChanged,
+    PullFailureKind Failure = PullFailureKind.None)
+{
+    /// <summary>
+    /// Whether replacing the module with a fresh clone would actually resolve this. True only for local
+    /// divergence — never for a failure that says nothing about the checkout's contents.
+    /// </summary>
+    public bool ReplacingWouldHelp => Failure is PullFailureKind.DirtyTree or PullFailureKind.Diverged;
+}
 
 /// <summary><paramref name="BackupPath"/> is where the replaced folder was moved, so the user can recover it.</summary>
 public sealed record RecloneResult(bool Success, string Message, string? BackupPath = null);
@@ -47,7 +82,8 @@ public sealed class ModuleUpdater
             using var repo = new Repository(modulePath);
 
             if (repo.RetrieveStatus(new StatusOptions()).IsDirty)
-                return new PullResult(false, "Working tree has uncommitted changes — resolve them before pulling.", false, false);
+                return new PullResult(false, "Working tree has uncommitted changes — resolve them before pulling.",
+                    false, false, PullFailureKind.DirtyTree);
 
             var beforeSha = repo.Head.Tip?.Sha;
 
@@ -85,12 +121,15 @@ public sealed class ModuleUpdater
         }
         catch (LibGit2SharpException ex) when (ex.Message.Contains("fast-forward", StringComparison.OrdinalIgnoreCase))
         {
-            return new PullResult(false, "Cannot fast-forward — local commits diverge from the remote.", false, false);
+            return new PullResult(false, "Cannot fast-forward — local commits diverge from the remote.",
+                false, false, PullFailureKind.Diverged);
         }
         catch (LibGit2SharpException ex)
         {
             _log.LogWarning(ex, "Pull failed for {Module}", Path.GetFileName(modulePath));
-            return new PullResult(false, ex.Message, false, false);
+            // Deliberately Other: this bucket is network failures, auth, rate limits and locked repos. None of
+            // them mean the checkout is wrong, so nothing here may authorise replacing it.
+            return new PullResult(false, ex.Message, false, false, PullFailureKind.Other);
         }
     }
 
@@ -131,8 +170,11 @@ public sealed class ModuleUpdater
         if (string.IsNullOrWhiteSpace(url))
             return new RecloneResult(false, $"{name} has no remote to re-clone from.");
 
-        _log.LogInformation("Force-replacing {Module} from {Url}", name, url);
-        return Reclone(modulePath, url!, replaceGitRepo: true);
+        // Keep the branch. Replacing is already destructive enough without also moving the user to whatever
+        // the remote calls default — same remote, so the branch is guaranteed to exist there.
+        var branch = CurrentBranch(modulePath);
+        _log.LogInformation("Force-replacing {Module} from {Url} on {Branch}", name, url, branch ?? "(default)");
+        return Reclone(modulePath, url!, replaceGitRepo: true, branch: branch);
     }
 
     /// <summary>
@@ -218,30 +260,57 @@ public sealed class ModuleUpdater
 
         var divergence = repo.ObjectDatabase.CalculateHistoryDivergence(local, tracked.Tip);
 
-        // Behind only: a plain fast-forward pull gets there.
-        if (divergence.AheadBy == 0 && divergence.BehindBy > 0)
+        // AheadBy/BehindBy are int? and are BOTH null when the two commits share no common ancestor — an
+        // unrelated repo rather than a fork. Nothing can be counted, but "diverged, re-clone" is exactly the
+        // right advice, so treat it as the deepest divergence rather than printing empty numbers.
+        if (divergence.AheadBy is not { } ahead || divergence.BehindBy is not { } behind)
             return new RepointResult(true,
-                $"{name} now points at {cloneUrl} — {divergence.BehindBy} commits behind it. Pull to apply.",
+                $"{name} now points at {cloneUrl}, but the two share no common history — it looks like a " +
+                "different project, not a fork. Re-clone the module if you're sure this is the repo you want.",
+                Diverged: true);
+
+        // Behind only: a plain fast-forward pull gets there.
+        if (ahead == 0 && behind > 0)
+            return new RepointResult(true,
+                $"{name} now points at {cloneUrl} — {behind} commits behind it. Pull to apply.",
                 CanFastForward: true);
 
         // Anything else means the histories have parted ways, which is the normal state of a fork.
         return new RepointResult(true,
             $"{name} now points at {cloneUrl}, but the histories have diverged " +
-            $"({divergence.AheadBy} local commits it doesn't have, {divergence.BehindBy} of its commits you don't). " +
+            $"({ahead} local commits it doesn't have, {behind} of its commits you don't). " +
             "A fast-forward pull can't cross that — re-clone the module to move onto this repo cleanly.",
             Diverged: true);
     }
 
     /// <summary>Fetch options carrying the configured GitHub token, so private forks work too.</summary>
     private FetchOptions FetchOptionsWithCredentials()
+        => new() { CredentialsProvider = CredentialsProvider() };
+
+    /// <summary>The configured GitHub token as git credentials, or null when none is set.</summary>
+    private CredentialsHandler? CredentialsProvider()
     {
         var token = _settings().GitHub.Token;
-        return new FetchOptions
+        return string.IsNullOrWhiteSpace(token)
+            ? null
+            : (_, _, _) => new UsernamePasswordCredentials { Username = token, Password = string.Empty };
+    }
+
+    /// <summary>The checked-out branch of a repo, or null if it can't be read.</summary>
+    private static string? CurrentBranch(string modulePath)
+    {
+        try
         {
-            CredentialsProvider = string.IsNullOrWhiteSpace(token)
-                ? null
-                : (_, _, _) => new UsernamePasswordCredentials { Username = token, Password = string.Empty },
-        };
+            if (!Repository.IsValid(modulePath))
+                return null;
+            using var repo = new Repository(modulePath);
+            var name = repo.Head.FriendlyName;
+            return string.IsNullOrEmpty(name) || name == "(no branch)" ? null : name;
+        }
+        catch (LibGit2SharpException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -264,7 +333,17 @@ public sealed class ModuleUpdater
     /// diverged, where no pull can get there — the existing checkout is still moved aside, never deleted, so
     /// this stays recoverable.
     /// </param>
-    public RecloneResult Reclone(string modulePath, string cloneUrl, string? timestamp = null, bool replaceGitRepo = false)
+    /// <param name="branch">
+    /// Branch to check out. Pass the one the module was already on when replacing a checkout: cloning without
+    /// it silently lands on the remote's default branch, which can be a different codebase entirely (master vs
+    /// main, or a pinned 3.3.5a-* branch), and the next build would compile something the user never chose.
+    /// </param>
+    public RecloneResult Reclone(
+        string modulePath,
+        string cloneUrl,
+        string? timestamp = null,
+        bool replaceGitRepo = false,
+        string? branch = null)
     {
         var name = Path.GetFileName(modulePath);
 
@@ -292,10 +371,21 @@ public sealed class ModuleUpdater
 
         try
         {
-            Repository.Clone(cloneUrl, modulePath);
-            _log.LogInformation("Re-cloned {Name} from {Url}; previous folder kept at {Backup}", name, cloneUrl, backupPath);
+            // Credentials, so a private fork clones as well as it fetches — Pull and RepointRemote both pass
+            // the token, and a re-clone that didn't would fail AFTER the folder had been moved aside.
+            var options = new CloneOptions { FetchOptions = { CredentialsProvider = CredentialsProvider() } };
+            if (!string.IsNullOrWhiteSpace(branch))
+                options.BranchName = branch;
+
+            Repository.Clone(cloneUrl, modulePath, options);
+
+            // Name the branch: this is the step most likely to move the user somewhere they didn't intend.
+            var landedOn = CurrentBranch(modulePath);
+            _log.LogInformation("Re-cloned {Name} from {Url} on {Branch}; previous folder kept at {Backup}",
+                name, cloneUrl, landedOn, backupPath);
             return new RecloneResult(true,
-                $"Re-cloned {name} from {cloneUrl}. Your previous folder is at module-backups/{Path.GetFileName(backupPath)} — " +
+                $"Re-cloned {name} from {cloneUrl}" + (landedOn == null ? "" : $" on branch {landedOn}") +
+                $". Your previous folder is at module-backups/{Path.GetFileName(backupPath)} — " +
                 "rebuild to apply, then delete it once you're happy.",
                 backupPath);
         }
