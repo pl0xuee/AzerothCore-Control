@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.17] - 2026-07-19
+
+### Added
+- **Module pins now work for git checkouts, not just ZIP installs.** Pinning a module to a fork used to change
+  nothing if the folder was a real clone: the check reads the origin remote, and a pin it disagreed with was
+  simply ignored. The Modules tab now says so — the Source column turns amber and names both repos — and
+  offers a **"Use pinned repo"** button that repoints `origin` at the pinned fork and fetches.
+  - The remote still drives the update check, deliberately. It's where a pull would genuinely fetch from, and
+    reporting commits from a repo the checkout isn't wired to would be a lie. The pin is an intention; the
+    remote is the fact. Surfacing the gap beats silently honouring either one.
+  - Switching only rewrites the remote and fetches. Nothing is merged, reset or deleted — a fork almost always
+    diverges from its upstream, and resetting onto it would throw away local commits.
+  - When the histories *have* diverged (the normal state of a fork), no fast-forward can cross it. That's
+    reported plainly, and moving across is offered as a separate, separately-confirmed re-clone, which keeps
+    the old folder as a backup. `Reclone` grew a `replaceGitRepo` flag for exactly that case; it still refuses
+    to touch a working checkout unless asked in those words.
+  - A failed fetch puts the original remote back. A module pointed at a URL that can't be reached is worse
+    than one pointed at the repo it started on.
+
 ## [0.1.16] - 2026-07-19
 
 ### Added

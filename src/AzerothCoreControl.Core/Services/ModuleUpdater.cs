@@ -11,6 +11,21 @@ public sealed record PullResult(bool Success, string Message, bool RebuildRecomm
 public sealed record RecloneResult(bool Success, string Message, string? BackupPath = null);
 
 /// <summary>
+/// Outcome of repointing a checkout at a different remote.
+/// </summary>
+/// <param name="CanFastForward">A normal pull will now bring the module up to date.</param>
+/// <param name="Diverged">
+/// The new remote's history is not a superset of the local one, so a fast-forward pull cannot work. Common
+/// when switching to a fork that has its own commits: nothing is broken, but getting onto it needs a re-clone
+/// or a manual reset, which this app will not do behind the user's back.
+/// </param>
+public sealed record RepointResult(
+    bool Success,
+    string Message,
+    bool CanFastForward = false,
+    bool Diverged = false);
+
+/// <summary>
 /// Performs a fast-forward <c>git pull</c> on a module working directory using LibGit2Sharp.
 /// Refuses to pull when the tree is dirty or a merge would be required, to avoid clobbering local edits.
 /// </summary>
@@ -80,6 +95,115 @@ public sealed class ModuleUpdater
     }
 
     /// <summary>
+    /// Point an existing checkout's <c>origin</c> at <paramref name="cloneUrl"/> and fetch, so update checks
+    /// and pulls follow the repo the user pinned rather than whatever it was originally cloned from.
+    /// </summary>
+    /// <remarks>
+    /// This is the git-checkout counterpart to <see cref="Reclone"/>: the folder already has history worth
+    /// keeping, so the remote is rewritten in place instead of the whole tree being replaced.
+    /// <para>
+    /// Nothing is merged, reset or deleted here — it only changes where the module looks and reports what it
+    /// found. A fork almost always diverges from its upstream, and quietly resetting onto it would throw away
+    /// commits the user may have made. Deciding that is the user's call, so this hands back
+    /// <see cref="RepointResult.Diverged"/> and stops.
+    /// </para>
+    /// <para>
+    /// If the fetch fails the original URL is put back: a remote that cannot be reached is worse than the one
+    /// that was working, and a half-applied switch would leave the module unable to update at all.
+    /// </para>
+    /// </remarks>
+    public RepointResult RepointRemote(string modulePath, string cloneUrl)
+    {
+        var name = Path.GetFileName(modulePath);
+        if (!Repository.IsValid(modulePath))
+            return new RepointResult(false, $"{name} is not a git repository — use Re-clone instead.");
+
+        try
+        {
+            using var repo = new Repository(modulePath);
+
+            // A dirty tree survives the switch, but the pull that follows would refuse anyway — better to say
+            // so now than after the remote has changed under them.
+            if (repo.RetrieveStatus(new StatusOptions()).IsDirty)
+                return new RepointResult(false, "Working tree has uncommitted changes — resolve them before switching remotes.");
+
+            var origin = repo.Network.Remotes["origin"];
+            var previousUrl = origin?.Url;
+            if (origin == null)
+                repo.Network.Remotes.Add("origin", cloneUrl);
+            else
+                repo.Network.Remotes.Update("origin", r => r.Url = cloneUrl);
+
+            try
+            {
+                var remote = repo.Network.Remotes["origin"];
+                var refSpecs = remote.FetchRefSpecs.Select(x => x.Specification).ToList();
+                Commands.Fetch(repo, "origin", refSpecs, FetchOptionsWithCredentials(), logMessage: null);
+            }
+            catch (LibGit2SharpException ex)
+            {
+                if (previousUrl != null)
+                    repo.Network.Remotes.Update("origin", r => r.Url = previousUrl);
+                else
+                    repo.Network.Remotes.Remove("origin");
+                return new RepointResult(false, $"Could not fetch from {cloneUrl} — remote left unchanged. {ex.Message}");
+            }
+
+            _log.LogInformation("Repointed {Module} at {Url}", name, cloneUrl);
+            return DescribeDivergence(repo, name, cloneUrl);
+        }
+        catch (LibGit2SharpException ex)
+        {
+            _log.LogWarning(ex, "Repoint failed for {Module}", name);
+            return new RepointResult(false, ex.Message);
+        }
+    }
+
+    /// <summary>Work out what the user can now do: fast-forward, nothing to do, or an unavoidable manual step.</summary>
+    private static RepointResult DescribeDivergence(Repository repo, string name, string cloneUrl)
+    {
+        var local = repo.Head.Tip;
+        // The branch of the same name on the new remote — the one a pull would target.
+        var tracked = repo.Branches[$"origin/{repo.Head.FriendlyName}"]
+            ?? repo.Branches["origin/master"]
+            ?? repo.Branches["origin/main"];
+
+        if (local == null || tracked?.Tip == null)
+            return new RepointResult(true,
+                $"{name} now points at {cloneUrl}, but its branch isn't on that remote — check for updates to see where it stands.");
+
+        if (local.Sha == tracked.Tip.Sha)
+            return new RepointResult(true, $"{name} now points at {cloneUrl} and is already up to date with it.");
+
+        var divergence = repo.ObjectDatabase.CalculateHistoryDivergence(local, tracked.Tip);
+
+        // Behind only: a plain fast-forward pull gets there.
+        if (divergence.AheadBy == 0 && divergence.BehindBy > 0)
+            return new RepointResult(true,
+                $"{name} now points at {cloneUrl} — {divergence.BehindBy} commits behind it. Pull to apply.",
+                CanFastForward: true);
+
+        // Anything else means the histories have parted ways, which is the normal state of a fork.
+        return new RepointResult(true,
+            $"{name} now points at {cloneUrl}, but the histories have diverged " +
+            $"({divergence.AheadBy} local commits it doesn't have, {divergence.BehindBy} of its commits you don't). " +
+            "A fast-forward pull can't cross that — re-clone the module to move onto this repo cleanly.",
+            Diverged: true);
+    }
+
+    /// <summary>Fetch options carrying the configured GitHub token, so private forks work too.</summary>
+    private FetchOptions FetchOptionsWithCredentials()
+    {
+        var token = _settings().GitHub.Token;
+        return new FetchOptions
+        {
+            CredentialsProvider = string.IsNullOrWhiteSpace(token)
+                ? null
+                : (_, _, _) => new UsernamePasswordCredentials { Username = token, Password = string.Empty },
+        };
+    }
+
+    /// <summary>
     /// Replace a non-git module folder with a proper git clone of <paramref name="cloneUrl"/>, so it can be
     /// update-checked from then on.
     /// </summary>
@@ -94,11 +218,16 @@ public sealed class ModuleUpdater
     /// the user to run. It would also show up as a bogus module row.
     /// </para>
     /// </remarks>
-    public RecloneResult Reclone(string modulePath, string cloneUrl, string? timestamp = null)
+    /// <param name="replaceGitRepo">
+    /// Allow replacing a real checkout, not just a ZIP install. Needed to move onto a fork whose history has
+    /// diverged, where no pull can get there — the existing checkout is still moved aside, never deleted, so
+    /// this stays recoverable.
+    /// </param>
+    public RecloneResult Reclone(string modulePath, string cloneUrl, string? timestamp = null, bool replaceGitRepo = false)
     {
         var name = Path.GetFileName(modulePath);
 
-        if (Repository.IsValid(modulePath))
+        if (Repository.IsValid(modulePath) && !replaceGitRepo)
             return new RecloneResult(false, $"{name} is already a git repository — use Pull instead.");
         if (!Directory.Exists(modulePath))
             return new RecloneResult(false, $"{modulePath} does not exist.");

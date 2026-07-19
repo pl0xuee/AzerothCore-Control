@@ -53,6 +53,25 @@ public sealed class ModuleStatus
     /// <summary>Set when the status could not be computed (network/API/git error).</summary>
     public string? Error { get; init; }
 
+    /// <summary>
+    /// The repo this module is pinned to in settings, set ONLY when that pin disagrees with the origin remote
+    /// the checkout actually uses ("owner/repo"). Null when there is no pin, or the pin already matches.
+    /// </summary>
+    /// <remarks>
+    /// A pin is the user saying "this module is really that repo" — usually because they run a fork. For a
+    /// folder with no git metadata that is the only identification available, but for a real checkout the
+    /// remote is the fact and the pin is an intention, and the two can disagree. Naming the disagreement lets
+    /// the app offer to act on it instead of silently checking updates against a repo the user has told us is
+    /// the wrong one.
+    /// </remarks>
+    public string? PinnedRepo { get; init; }
+
+    /// <summary>Clone URL of <see cref="PinnedRepo"/>, for repointing the remote at it.</summary>
+    public string? PinnedCloneUrl { get; init; }
+
+    /// <summary>The checkout's origin disagrees with the repo it's pinned to in settings.</summary>
+    public bool HasRemoteMismatch => PinnedRepo != null && PinnedCloneUrl != null;
+
     public bool UpdateAvailable => BehindBy > 0;
 
     /// <summary>A pull can fast-forward cleanly only if we're behind, not ahead, and the tree is clean.</summary>

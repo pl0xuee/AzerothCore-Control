@@ -224,6 +224,9 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanPull))]
     [NotifyPropertyChangedFor(nameof(IsRecloneable))]
     [NotifyPropertyChangedFor(nameof(CanReclone))]
+    [NotifyPropertyChangedFor(nameof(HasRemoteMismatch))]
+    [NotifyPropertyChangedFor(nameof(CanSwitchRemote))]
+    [NotifyPropertyChangedFor(nameof(MismatchText))]
     [NotifyPropertyChangedFor(nameof(SourceText))]
     [NotifyPropertyChangedFor(nameof(RevisionText))]
     [NotifyPropertyChangedFor(nameof(IncomingCommits))]
@@ -236,6 +239,7 @@ public sealed partial class ModuleRowViewModel : ObservableObject
     // the source tree the compiler is reading.
     [NotifyPropertyChangedFor(nameof(CanPull))]
     [NotifyPropertyChangedFor(nameof(CanReclone))]
+    [NotifyPropertyChangedFor(nameof(CanSwitchRemote))]
     [ObservableProperty] private bool _isBusy;
 
     [ObservableProperty] private string? _actionResult;
@@ -286,6 +290,19 @@ public sealed partial class ModuleRowViewModel : ObservableObject
 
     public bool CanReclone => IsRecloneable && !IsBusy;
 
+    /// <summary>This checkout's origin disagrees with the repo it's pinned to in settings.</summary>
+    public bool HasRemoteMismatch => Model.HasRemoteMismatch;
+
+    public bool CanSwitchRemote => HasRemoteMismatch && !IsBusy;
+
+    /// <summary>
+    /// Spells the disagreement out both ways. "Pinned to X" alone reads as settled fact; the point is that
+    /// updates are currently being checked against something else.
+    /// </summary>
+    public string MismatchText => HasRemoteMismatch
+        ? $"Pinned to {Model.PinnedRepo}, but this checkout follows {Model.GitHubRepo ?? "no remote"}."
+        : "";
+
     public IReadOnlyList<ModuleCommit> IncomingCommits => Model.IncomingCommits;
     public bool HasIncomingCommits => Model.IncomingCommits.Count > 0;
 
@@ -303,6 +320,106 @@ public sealed partial class ModuleRowViewModel : ObservableObject
             var result = _coordinator.ModuleUpdater.Pull(Model.Path);
             return (result.Success, result.Message);
         });
+    }
+
+    /// <summary>
+    /// Point this checkout's origin at the repo it's pinned to, so checks and pulls follow the fork the user
+    /// actually runs instead of whatever it was first cloned from.
+    /// </summary>
+    /// <remarks>
+    /// Switching remotes usually reveals a diverged history — that is the normal state of a fork, not a
+    /// failure. When it happens the only way across is to re-clone, so this offers exactly that as a second,
+    /// separately-confirmed step rather than resetting the user's commits away on its own initiative.
+    /// </remarks>
+    [RelayCommand]
+    private async Task SwitchToPinnedRepoAsync()
+    {
+        var cloneUrl = Model.PinnedCloneUrl;
+        var pinned = Model.PinnedRepo;
+        if (cloneUrl == null || pinned == null || !CanSwitchRemote)
+            return;
+
+        var answer = System.Windows.MessageBox.Show(
+            $"Point {Name} at {pinned}?\n\n" +
+            $"It currently follows {Model.GitHubRepo ?? "no remote"}. This rewrites the module's origin remote " +
+            "and fetches — no files are changed and nothing is merged, so your working tree is untouched.\n\n" +
+            "If the two histories have diverged (usual for a fork), you'll be told what it would take to move across.",
+            "Switch remote",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (answer != System.Windows.MessageBoxResult.Yes)
+            return;
+
+        IsBusy = true;
+        ActionFailed = false;
+        ActionResult = "Switching remote…";
+        try
+        {
+            // Fetching is a network operation — keep it off the UI thread.
+            var result = await Task.Run(() => _coordinator.ModuleUpdater.RepointRemote(Model.Path, cloneUrl)).ConfigureAwait(true);
+            ActionResult = result.Message;
+            ActionFailed = !result.Success;
+
+            if (result.Success)
+                await RecheckAsync().ConfigureAwait(true);
+
+            // Only a diverged history needs the destructive follow-up, and only the user can authorise it.
+            if (result.Diverged)
+                await OfferRecloneOntoPinnedRepoAsync(pinned, cloneUrl).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            ActionResult = "Failed: " + ex.Message;
+            ActionFailed = true;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>The re-clone that a diverged fork needs, asked for on its own terms.</summary>
+    private async Task OfferRecloneOntoPinnedRepoAsync(string pinned, string cloneUrl)
+    {
+        var answer = System.Windows.MessageBox.Show(
+            $"{Name} and {pinned} have diverged, so no pull can move you onto it.\n\n" +
+            $"Re-clone {Name} from {pinned}?\n\n" +
+            $"Your current folder is moved aside (kept as a backup), not deleted — but any local commits or " +
+            "edits will only exist there afterwards. Rebuild once it's done.",
+            "Re-clone onto pinned repo",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (answer != System.Windows.MessageBoxResult.Yes)
+            return;
+
+        ActionResult = "Cloning…";
+        var result = await Task.Run(() =>
+            _coordinator.ModuleUpdater.Reclone(Model.Path, cloneUrl, replaceGitRepo: true)).ConfigureAwait(true);
+        ActionResult = result.Message;
+        ActionFailed = !result.Success;
+        if (result.Success)
+            await RecheckAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Re-read this module after its remote or checkout changed, so the row stops describing the old state.
+    /// </summary>
+    /// <remarks>
+    /// Task.Run because the git work (RetrieveStatus over every file) runs synchronously before the first
+    /// await, which would freeze the window right after an operation we were careful to keep off the UI thread.
+    /// </remarks>
+    private async Task RecheckAsync()
+    {
+        try
+        {
+            var path = Model.Path;
+            Model = await Task.Run(() => _coordinator.ModuleChecker.CheckOneAsync(path)).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            // The operation itself worked; failing to re-read it is cosmetic — a re-check will pick it up.
+            Serilog.Log.Warning(ex, "Re-check failed for {Module}", Name);
+        }
     }
 
     /// <summary>
@@ -338,23 +455,9 @@ public sealed partial class ModuleRowViewModel : ObservableObject
             ActionResult = result.Message;
             ActionFailed = !result.Success;
 
+            // It's a real checkout now — re-read it so the row stops calling itself a ZIP install.
             if (result.Success)
-            {
-                // It's a real checkout now — re-read it so the row stops calling itself a ZIP install.
-                // Task.Run because CheckOneAsync does its git work (RetrieveStatus over every file in a fresh
-                // clone) synchronously before its first await, which would freeze the window right after the
-                // clone we were careful to keep off the UI thread.
-                try
-                {
-                    var path = Model.Path;
-                    Model = await Task.Run(() => _coordinator.ModuleChecker.CheckOneAsync(path)).ConfigureAwait(true);
-                }
-                catch (Exception ex)
-                {
-                    // The clone worked; failing to re-read it is cosmetic — a re-check will pick it up.
-                    Serilog.Log.Warning(ex, "Re-check after re-clone failed for {Module}", Name);
-                }
-            }
+                await RecheckAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
         {

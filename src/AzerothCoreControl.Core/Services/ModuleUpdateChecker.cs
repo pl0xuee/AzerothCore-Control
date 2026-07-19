@@ -204,6 +204,11 @@ public sealed partial class ModuleUpdateChecker
             var localSha = head.Tip?.Sha;
             var (owner, repoName) = ParseGitHubRemote(repo);
 
+            // A pin that disagrees with the actual origin. The remote still drives the check below — it is
+            // where a pull would genuinely fetch from, and reporting updates from a repo this checkout isn't
+            // wired to would be a lie. The disagreement is surfaced so the user can act on it.
+            var mismatch = FindRemoteMismatch(_settings().ModuleRepoOverrides, name, owner, repoName);
+
             string? remoteSha = null;
             string? latestRelease = null;
             int behind = 0, ahead = 0;
@@ -263,6 +268,8 @@ public sealed partial class ModuleUpdateChecker
                 LocalCommit = Short(localSha),
                 RemoteCommit = Short(remoteSha),
                 GitHubRepo = owner != null ? $"{owner}/{repoName}" : null,
+                PinnedRepo = mismatch?.FullName,
+                PinnedCloneUrl = mismatch?.CloneUrl,
                 BehindBy = behind,
                 AheadBy = ahead,
                 HasLocalChanges = status.IsDirty,
@@ -355,6 +362,27 @@ public sealed partial class ModuleUpdateChecker
     }
 
     /// <summary>Extract "owner/repo" from the origin remote URL (https or ssh form).</summary>
+    /// <summary>
+    /// The configured pin for <paramref name="folderName"/>, but only when it names a different repo than the
+    /// checkout's origin. Null when unpinned, unparseable, or already in agreement.
+    /// </summary>
+    internal static CatalogueEntry? FindRemoteMismatch(
+        IEnumerable<ModuleRepoOverride>? overrides, string folderName, string? owner, string? repoName)
+    {
+        var pin = ModuleCatalogue.FindOverride(overrides, folderName);
+        if (pin == null)
+            return null;
+
+        // No parseable remote at all: the pin has nothing to disagree with, but it IS actionable — pointing a
+        // remote-less checkout at the pinned repo is exactly what the user asked for by pinning it.
+        if (owner == null || repoName == null)
+            return pin;
+
+        return string.Equals(pin.FullName, $"{owner}/{repoName}", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : pin;
+    }
+
     internal static (string? owner, string? repo) ParseGitHubRemote(Repository repo)
     {
         var origin = repo.Network.Remotes["origin"] ?? repo.Network.Remotes.FirstOrDefault();

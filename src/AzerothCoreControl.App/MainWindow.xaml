@@ -276,6 +276,15 @@
                                         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
                                         <Setter Property="FontSize" Value="12" />
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                        <Style.Triggers>
+                                            <!-- The column says where updates are actually checked from. When a
+                                                 pin disagrees with that, saying so quietly here beats letting
+                                                 the user believe their fork is being followed when it isn't. -->
+                                            <DataTrigger Binding="{Binding HasRemoteMismatch}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource GoldBrush}" />
+                                                <Setter Property="ToolTip" Value="{Binding MismatchText}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
@@ -290,6 +299,13 @@
                                             <Button Content="Pull + Build" Command="{Binding PullAndBuildCommand}"
                                                     IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
                                                     Style="{StaticResource GridButton}" />
+                                            <!-- Only when a pin disagrees with the actual origin: repoints the
+                                                 checkout at the repo the user says this module really is. -->
+                                            <Button Content="Use pinned repo" Command="{Binding SwitchToPinnedRepoCommand}"
+                                                    IsEnabled="{Binding CanSwitchRemote}"
+                                                    ToolTip="{Binding MismatchText}"
+                                                    Style="{StaticResource GridButton}"
+                                                    Visibility="{Binding HasRemoteMismatch, Converter={StaticResource BoolToVis}}" />
                                             <!-- Only for a ZIP install we could identify: turns it into a real
                                                  checkout so update checks start working. -->
                                             <Button Content="Re-clone" Command="{Binding RecloneCommand}"
