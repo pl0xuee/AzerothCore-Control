@@ -622,7 +622,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Module repositories" Style="{StaticResource CardHeader}" />
                                     <TextBlock Style="{StaticResource Hint}"
-                                               Text="Only needed for modules installed without git. Those are identified by matching the folder name against the AzerothCore catalogue, which finds the popular upstream — so pin any fork you run deliberately, or it would be offered a re-clone of the wrong repo." />
+                                               Text="Pin a module to the repo you actually want it to follow — normally a fork, when the version you need isn't in the repo the module was installed from. For a module installed without git, the pin is the only way to identify it: folder names are matched against the AzerothCore catalogue, which finds the popular upstream rather than your fork. For a git checkout, the Modules tab flags the disagreement and offers to repoint it." />
 
                                     <DataGrid ItemsSource="{Binding ModuleRepoOverrides}" SelectedItem="{Binding SelectedOverride}"
                                               CanUserAddRows="False" IsReadOnly="False" Height="140" Margin="0,0,0,8">
@@ -634,7 +634,7 @@
                                     <StackPanel Orientation="Horizontal">
                                         <Button Content="Add" Command="{Binding AddModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
                                         <Button Content="Remove" Command="{Binding RemoveModuleRepoOverrideCommand}" Style="{StaticResource GridButton}" />
-                                        <TextBlock Text="e.g.  mod-challenge-modes  →  poemihai/mod-challenge-modes"
+                                        <TextBlock Text="e.g.  mod-challenge-modes  →  AldebaraanMKII/mod-challenge-modes"
                                                    Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                                                    VerticalAlignment="Center" Margin="8,0,0,0" />
                                     </StackPanel>

@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.20] - 2026-07-19
+
+### Fixed
+- **The "Module repositories" settings card described the old behaviour.** It still said pins were "only
+  needed for modules installed without git" — true until 0.1.17, which made them apply to git checkouts too.
+  Anyone reading it would conclude the pin they needed wouldn't work. It now describes what pins are actually
+  for, and what each kind of module does with one.
+- The card's worked example pointed at a fork of mod-challenge-modes that deletes the semi-hardcore item-loss
+  handler. It now names a fork that carries the compile fix without dropping features.
+
 ## [0.1.19] - 2026-07-19
 
 ### Added
