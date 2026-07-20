@@ -175,7 +175,11 @@
                              report — that report belongs to no single row, and would be unreachable if the
                              panel only appeared on selection. Later triggers win, so the batch one overrides. -->
                         <TabControl.Style>
-                            <Style TargetType="TabControl">
+                            <!-- BasedOn is load-bearing: without it this inline style REPLACES the implicit
+                                 theme style, taking the custom Template with it. The TabControl then falls
+                                 back to the stock WPF template, which paints the content canvas white and
+                                 strands the dark-theme text on it. -->
+                            <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">
                                 <Setter Property="Visibility" Value="Visible" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SelectedModule}" Value="{x:Null}">

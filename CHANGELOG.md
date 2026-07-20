@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.23] - 2026-07-19
+
+### Fixed
+- **The "What changed" panel rendered on a white background**, leaving the commit list nearly unreadable —
+  pale text on white, inside an otherwise dark window.
+  - The panel's text colour was never wrong. The detail `TabControl` carries a small inline style whose only
+    job is to hide the panel when no module is selected, and that style omitted `BasedOn`. A WPF style with a
+    `TargetType` and no `BasedOn` **replaces** the implicit theme style rather than extending it, so two
+    visibility setters silently discarded the theme's entire `ControlTemplate` — including the border that
+    paints the content canvas dark. The stock WPF template took over and painted it white.
+  - Only the canvas was affected, not the tab headers: `TabItem` has its own separate implicit style, which
+    this override never touched. That split is why it read as a colour bug rather than a missing theme.
+  - Worth noting this was latent rather than a regression. The canvas was deliberately re-toned in an earlier
+    release, and that change never reached this tab, because the tab wasn't reading the template at all.
+
 ## [0.1.22] - 2026-07-19
 
 ### Added
