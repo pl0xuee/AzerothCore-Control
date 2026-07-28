@@ -71,6 +71,40 @@ public sealed partial class SettingsViewModel : ObservableObject
         ModuleRepoOverrides.Clear();
         foreach (var o in s.ModuleRepoOverrides)
             ModuleRepoOverrides.Add(new ModuleRepoOverride { Module = o.Module, Repository = o.Repository });
+
+        RefreshLaunchOnBootFromSystem();
+    }
+
+    /// <summary>
+    /// Correct <see cref="LaunchOnBoot"/> from the registered logon task. settings.json only records what
+    /// we last asked for; the task is the truth, and the two drift as soon as anything outside the app
+    /// touches it. A checkbox reporting its own saved value is precisely why the old (permanently broken)
+    /// Run-key autostart went unnoticed. Runs off-thread: it shells out to schtasks, and this view model
+    /// is constructed during startup.
+    /// </summary>
+    private void RefreshLaunchOnBootFromSystem()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        _ = Task.Run(() =>
+        {
+            bool registered;
+            try
+            {
+                registered = AutostartManager.IsEnabled();
+            }
+            catch
+            {
+                return; // Couldn't ask — leave the saved value alone rather than guess.
+            }
+
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => LaunchOnBoot = registered);
+            }
+            catch { /* shutting down */ }
+        });
     }
 
     [RelayCommand]
@@ -235,7 +269,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         _coordinator.SaveSettings();
 
         if (OperatingSystem.IsWindows())
-            AutostartManager.SetEnabled(LaunchOnBoot);
+        {
+            try
+            {
+                AutostartManager.SetEnabled(LaunchOnBoot);
+            }
+            catch (Exception ex)
+            {
+                // Registering the logon task can genuinely fail (group policy, a locked-down machine).
+                // Reporting "Settings saved." over the top of that is how the previous autostart bug
+                // managed to stay invisible for 23 releases.
+                SaveResult = "Settings saved, but launch-on-boot could not be changed: " + ex.Message;
+                return;
+            }
+        }
 
         SaveResult = "Settings saved.";
     }

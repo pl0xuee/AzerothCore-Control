@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AzerothCoreControl.Core.Models;
 using AzerothCoreControl.Core.Services;
 using AzerothCoreControl.Core.Tests.Fakes;
@@ -10,11 +11,11 @@ public class ServerProcessSupervisorTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
 
-    private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, List<SupervisorEvent> events, FakeTimeProvider time)
+    private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, ConcurrentQueue<SupervisorEvent> events, FakeTimeProvider time)
         CreateWorld(Action<WatchdogSettings>? configure = null, bool autoExitOnShutdown = false)
         => Create(ServerKind.World, configure, autoExitOnShutdown);
 
-    private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, List<SupervisorEvent> events, FakeTimeProvider time)
+    private static (ServerProcessSupervisor sup, FakeProcessLauncher launcher, ConcurrentQueue<SupervisorEvent> events, FakeTimeProvider time)
         Create(ServerKind kind, Action<WatchdogSettings>? configure = null, bool autoExitOnShutdown = false)
     {
         var settings = new AppSettings();
@@ -25,9 +26,13 @@ public class ServerProcessSupervisorTests
 
         var time = new FakeTimeProvider();
         var launcher = new FakeProcessLauncher { AutoExitOnShutdown = autoExitOnShutdown };
-        var events = new List<SupervisorEvent>();
+        // ConcurrentQueue, not a locked List: the supervisor raises Notable from its own threads, and while
+        // the old handler locked on every ADD, none of the assertions locked to READ. Enumerating the list
+        // while a late event landed threw "Collection was modified" — an intermittent failure in whichever
+        // test happened to be asserting at the time. ConcurrentQueue enumerates a snapshot, so reads are safe.
+        var events = new ConcurrentQueue<SupervisorEvent>();
         var sup = new ServerProcessSupervisor(kind, launcher, () => settings, time);
-        sup.Notable += e => { lock (events) events.Add(e); };
+        sup.Notable += events.Enqueue;
         return (sup, launcher, events, time);
     }
 

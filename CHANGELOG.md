@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-28
+
+### Fixed
+- **"Launch app on Windows boot" never started anything** — the setting saved, the checkbox stayed ticked,
+  and nothing appeared after signing in. It had never worked, in any release.
+  - Autostart was registered under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Explorer processes
+    that key at logon using the user's **filtered (standard) token**, with UAC consent prompts suppressed.
+    This app's manifest requests `requireAdministrator` — it needs elevation to control the MySQL service and
+    write to the server directory — so the launch was silently dropped every time. Nothing errored: the value
+    wrote correctly and read back correctly, it just never started a process.
+  - Replaced with a Task Scheduler job running at `HighestAvailable`, which is the supported way to auto-start
+    an elevated app at logon without a prompt. Enabling the setting now also removes the dead Run-key value
+    left behind by earlier versions, so it stops showing up in Task Manager's Startup tab.
+  - The task deliberately overrides three Task Scheduler defaults that would each reproduce the same symptom:
+    `DisallowStartIfOnBatteries` (a laptop on battery would never start it), `StopIfGoingOnBatteries` (unplugging
+    would kill the servers), and the 72-hour `ExecutionTimeLimit` (a long-running supervisor would be terminated
+    after three days). It also waits 10 seconds after logon, because the notification area isn't reliably ready
+    the instant the trigger fires and a tray-only launch can otherwise end up with no icon.
+- **The checkbox reported its own saved value rather than the real state**, which is why the above went
+  unnoticed for 23 releases. It now reads back from the registered task, and a failure to register — group
+  policy, a locked-down machine — is reported in the Settings status line instead of "Settings saved."
+
 ## [0.1.23] - 2026-07-19
 
 ### Fixed
